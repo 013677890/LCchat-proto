@@ -1,0 +1,24 @@
+# --- 数据库与缓存数据 ---
+data/
+
+# --- IDE 配置文件 ---
+.cursor/
+.vscode/
+.idea/
+
+# --- 构建与临时文件 ---
+# 编译生成的二进制文件 (Windows/Linux/Mac)
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+/ChatServer
+
+# --- 日志文件 ---
+*.log
+
+# --- 系统文件 ---
+.DS_Store
+Thumbs.db
+

@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  # --- 后端服务 ---
+  app:
+    build: .
+    container_name: backend
+    ports:
+      - "8080:8080"
+    volumes:
+      # 把本地代码挂载进容器 /app
+      # 虽然我们不用热重载，但挂载必须有，否则你修改代码容器里看不到
+      - ./:/app
+    environment:
+      # 连接数据库的服务名
+      DB_HOST: mysql
+      REDIS_HOST: redis
+    depends_on:
+      - mysql
+      - redis
+
+  # --- 数据库服务 (保持不变) ---
+  mysql:
+    image: mysql:8.0
+    container_name: mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: chat_server
+    ports:
+      - "3306:3306"
+    volumes:
+      - ./data/mysql:/var/lib/mysql
+
+  # --- 缓存服务 (保持不变) ---
+  redis:
+    image: redis:7.0
+    container_name: redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./data/redis:/data
