@@ -3,26 +3,24 @@ package middleware
 import (
 	"ChatServer/apps/gateway/internal/utils"
 	"ChatServer/pkg/logger"
-	"context"
 	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	"go.uber.org/zap"
 )
 
 // JWTAuthMiddleware JWT 认证中间件
 // 从请求头中提取 Token 并验证，验证通过后将用户信息存入 Context
 func JWTAuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		ctx := context.Background()
+		ctx := c.Request.Context()
 
 		// 1. 从 Header 中获取 Authorization
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
 			logger.Warn(ctx, "missing authorization header",
-				zap.String("path", c.Request.URL.Path),
-				zap.String("method", c.Request.Method),
+				logger.String("path", c.Request.URL.Path),
+				logger.String("method", c.Request.Method),
 			)
 			c.JSON(http.StatusUnauthorized, gin.H{
 				"code":    401,
@@ -36,7 +34,7 @@ func JWTAuthMiddleware() gin.HandlerFunc {
 		parts := strings.SplitN(authHeader, " ", 2)
 		if len(parts) != 2 || parts[0] != "Bearer" {
 			logger.Warn(ctx, "invalid authorization header format",
-				zap.String("header", authHeader),
+				logger.String("header", authHeader),
 			)
 			c.JSON(http.StatusUnauthorized, gin.H{
 				"code":    401,
@@ -52,8 +50,8 @@ func JWTAuthMiddleware() gin.HandlerFunc {
 		claims, err := utils.ParseToken(tokenString)
 		if err != nil {
 			logger.Warn(ctx, "token validation failed",
-				zap.String("error", err.Error()),
-				zap.String("ip", c.ClientIP()),
+				logger.String("error", err.Error()),
+				logger.String("ip", c.ClientIP()),
 			)
 			c.JSON(http.StatusUnauthorized, gin.H{
 				"code":    401,
@@ -68,9 +66,9 @@ func JWTAuthMiddleware() gin.HandlerFunc {
 		c.Set("device_id", claims.DeviceID)
 
 		logger.Info(ctx, "user authenticated",
-			zap.String("user_uuid", claims.UserUUID),
-			zap.String("device_id", claims.DeviceID),
-			zap.String("path", c.Request.URL.Path),
+			logger.String("user_uuid", claims.UserUUID),
+			logger.String("device_id", claims.DeviceID),
+			logger.String("path", c.Request.URL.Path),
 		)
 
 		c.Next()

@@ -11,6 +11,8 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+
+	"github.com/gin-gonic/gin"
 )
 
 func main() {
@@ -35,6 +37,7 @@ func main() {
 	logger.Info(ctx, "Gateway service initializing...")
 
 	// 2. 初始化路由
+	gin.SetMode(gin.ReleaseMode)
 	r := router.InitRouter()
 
 	// 3. 配置服务器

@@ -71,6 +71,7 @@ func Build(cfg config.LoggerConfig) (*zap.Logger, error) {
 	opts := []zap.Option{
 		zap.ErrorOutput(errSync),
 		zap.AddCaller(),
+		zap.AddCallerSkip(1), // 跳过封装层，获取真正的业务代码行号
 	}
 	if cfg.Development {
 		opts = append(opts, zap.Development(), zap.AddStacktrace(zapcore.ErrorLevel))

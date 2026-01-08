@@ -4,20 +4,18 @@ import (
 	"ChatServer/apps/gateway/internal/middleware"
 	"ChatServer/apps/gateway/internal/utils"
 	"ChatServer/pkg/logger"
-	"context"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"go.uber.org/zap"
 )
 
 // InitRouter 初始化路由
 func InitRouter() *gin.Engine {
 	r := gin.New()
 
-	// 基础中间件
-	r.Use(gin.Logger())
-	r.Use(gin.Recovery())
+	// 基础中间件 (使用自定义的日志和恢复中间件)
+	r.Use(middleware.GinLogger())
+	r.Use(middleware.GinRecovery(true))
 
 	// 跨域中间件
 	r.Use(middleware.CorsMiddleware())
@@ -57,7 +55,7 @@ func InitRouter() *gin.Engine {
 
 // handleLogin 登录接口示例
 func handleLogin(c *gin.Context) {
-	ctx := context.Background()
+	ctx := c.Request.Context()
 
 	// TODO: 实际业务逻辑：验证用户名密码，查询数据库等
 	// 这里只是示例
@@ -68,7 +66,7 @@ func handleLogin(c *gin.Context) {
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		logger.Warn(ctx, "login request bind failed", zap.String("error", err.Error()))
+		logger.Warn(ctx, "login request bind failed", logger.String("error", err.Error()))
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,
 			"message": "请求参数错误",
@@ -82,7 +80,7 @@ func handleLogin(c *gin.Context) {
 	// 生成 Token
 	accessToken, err := utils.GenerateToken(userUUID, req.DeviceID)
 	if err != nil {
-		logger.Error(ctx, "generate access token failed", zap.String("error", err.Error()))
+		logger.Error(ctx, "generate access token failed", logger.String("error", err.Error()))
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
 			"message": "生成 Token 失败",
@@ -92,7 +90,7 @@ func handleLogin(c *gin.Context) {
 
 	refreshToken, err := utils.GenerateRefreshToken(userUUID, req.DeviceID)
 	if err != nil {
-		logger.Error(ctx, "generate refresh token failed", zap.String("error", err.Error()))
+		logger.Error(ctx, "generate refresh token failed", logger.String("error", err.Error()))
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
 			"message": "生成 Refresh Token 失败",
@@ -101,9 +99,9 @@ func handleLogin(c *gin.Context) {
 	}
 
 	logger.Info(ctx, "user login success",
-		zap.String("user_uuid", userUUID),
-		zap.String("device_id", req.DeviceID),
-		zap.String("ip", c.ClientIP()),
+		logger.String("user_uuid", userUUID),
+		logger.String("device_id", req.DeviceID),
+		logger.String("ip", c.ClientIP()),
 	)
 
 	c.JSON(http.StatusOK, gin.H{
@@ -119,14 +117,14 @@ func handleLogin(c *gin.Context) {
 
 // handleRefresh 刷新 Token 接口示例
 func handleRefresh(c *gin.Context) {
-	ctx := context.Background()
+	ctx := c.Request.Context()
 
 	var req struct {
 		RefreshToken string `json:"refresh_token" binding:"required"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		logger.Warn(ctx, "refresh request bind failed", zap.String("error", err.Error()))
+		logger.Warn(ctx, "refresh request bind failed", logger.String("error", err.Error()))
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,
 			"message": "请求参数错误",
@@ -137,7 +135,7 @@ func handleRefresh(c *gin.Context) {
 	// 刷新 Access Token
 	newAccessToken, err := utils.RefreshAccessToken(req.RefreshToken)
 	if err != nil {
-		logger.Warn(ctx, "refresh token failed", zap.String("error", err.Error()))
+		logger.Warn(ctx, "refresh token failed", logger.String("error", err.Error()))
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"code":    401,
 			"message": "Refresh Token 无效或已过期",
@@ -145,7 +143,7 @@ func handleRefresh(c *gin.Context) {
 		return
 	}
 
-	logger.Info(ctx, "token refreshed successfully", zap.String("ip", c.ClientIP()))
+	logger.Info(ctx, "token refreshed successfully", logger.String("ip", c.ClientIP()))
 
 	c.JSON(http.StatusOK, gin.H{
 		"code":    0,
@@ -158,15 +156,15 @@ func handleRefresh(c *gin.Context) {
 
 // handleGetUserInfo 获取用户信息接口示例（需要认证）
 func handleGetUserInfo(c *gin.Context) {
-	ctx := context.Background()
+	ctx := c.Request.Context()
 
 	// 从中间件中获取用户信息
 	userUUID, _ := middleware.GetUserUUID(c)
 	deviceID, _ := middleware.GetDeviceID(c)
 
 	logger.Info(ctx, "get user info",
-		zap.String("user_uuid", userUUID),
-		zap.String("device_id", deviceID),
+		logger.String("user_uuid", userUUID),
+		logger.String("device_id", deviceID),
 	)
 
 	// TODO: 从数据库查询用户详细信息
@@ -183,15 +181,15 @@ func handleGetUserInfo(c *gin.Context) {
 
 // handleLogout 退出登录接口示例（需要认证）
 func handleLogout(c *gin.Context) {
-	ctx := context.Background()
+	ctx := c.Request.Context()
 
 	userUUID, _ := middleware.GetUserUUID(c)
 	deviceID, _ := middleware.GetDeviceID(c)
 
 	// TODO: 将 Token 加入黑名单（Redis）或从设备会话表中删除
 	logger.Info(ctx, "user logout",
-		zap.String("user_uuid", userUUID),
-		zap.String("device_id", deviceID),
+		logger.String("user_uuid", userUUID),
+		logger.String("device_id", deviceID),
 	)
 
 	c.JSON(http.StatusOK, gin.H{
