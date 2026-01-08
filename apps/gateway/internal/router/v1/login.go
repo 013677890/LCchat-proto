@@ -5,6 +5,7 @@ import (
 	"ChatServer/apps/gateway/internal/middleware"
 	"ChatServer/apps/gateway/internal/pb"
 	"ChatServer/apps/gateway/internal/utils"
+	"ChatServer/consts"
 	"ChatServer/pkg/logger"
 	"ChatServer/pkg/util"
 	"time"
@@ -29,14 +30,16 @@ func Login(c *gin.Context) {
 	// 1. 绑定请求数据
 	var req dto.LoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
+		// 如果 JSON 绑定失败，说明客户端发送的数据格式有误或缺少必要字段
+		// 记录警告日志，包含 trace_id 和 客户端 IP 以便排查
 		logger.Warn(ctx, "login request bind failed",
 			logger.String("trace_id", traceId),
 			logger.String("ip", ip),
 			logger.ErrorField("error", err),
 		)
 		c.JSON(400, gin.H{
-			"code":    10001,
-			"message": "参数验证失败",
+			"code":    consts.CodeParamError,
+			"message": consts.GetMessage(consts.CodeParamError),
 			"errors":  []gin.H{{"message": err.Error()}},
 		})
 		return
@@ -52,33 +55,35 @@ func Login(c *gin.Context) {
 		logger.String("user_agent", c.Request.UserAgent()),
 	)
 
-	// 3. 参数校验
+	// 3. 业务参数合法性校验
 	if len(req.Telephone) != 11 {
+		// 校验手机号是否为 11 位，若不符合则直接拦截，减少后端服务压力
 		logger.Warn(ctx, "login validation failed: invalid telephone",
 			logger.String("trace_id", traceId),
 			logger.String("ip", ip),
 			logger.String("telephone", utils.MaskTelephone(req.Telephone)),
 		)
 		c.JSON(400, gin.H{
-			"code":    11005,
-			"message": "手机号格式错误",
+			"code":    consts.CodePhoneError,
+			"message": consts.GetMessage(consts.CodePhoneError),
 		})
 		return
 	}
 
 	if len(req.Password) == 0 {
+		// 密码不能为空，这是最基本的输入校验
 		logger.Warn(ctx, "login validation failed: empty password",
 			logger.String("trace_id", traceId),
 			logger.String("ip", ip),
 		)
 		c.JSON(400, gin.H{
-			"code":    10001,
-			"message": "密码不能为空",
+			"code":    consts.CodeParamError,
+			"message": consts.GetMessage(consts.CodeParamError),
 		})
 		return
 	}
 
-	// 4. 调用用户服务进行认证(gRPC)
+	// 4. 调用用户服务进行身份认证(gRPC)
 	startTime := time.Now()
 
 	grpcReq := &pb.LoginRequest{
@@ -91,10 +96,13 @@ func Login(c *gin.Context) {
 		logger.String("telephone", utils.MaskTelephone(req.Telephone)),
 	)
 
+	// 调用 gRPC 接口，并使用重试机制提高服务稳定性
 	grpcResp, err := pb.LoginWithRetry(ctx, grpcReq, 3)
 	duration := time.Since(startTime)
 
 	if err != nil {
+		// 如果 gRPC 调用返回错误，可能是网络抖动或 User 服务异常
+		// 记录错误日志，并向客户端返回 500 错误，保护内部服务细节
 		logger.Error(ctx, "gRPC call to user service failed",
 			logger.String("trace_id", traceId),
 			logger.String("ip", ip),
@@ -116,8 +124,10 @@ func Login(c *gin.Context) {
 		logger.Duration("duration", duration),
 	)
 
-	// 5. 处理用户服务返回的响应
+	// 5. 处理用户服务返回的业务响应
 	if grpcResp.Code != 0 {
+		// User 服务返回非 0 状态码，表示业务逻辑上的失败（如密码错误、账号锁定等）
+		// 将业务错误透传给前端
 		logger.Warn(ctx, "user authentication failed",
 			logger.String("trace_id", traceId),
 			logger.String("ip", ip),
@@ -134,6 +144,7 @@ func Login(c *gin.Context) {
 	}
 
 	if grpcResp.UserInfo == nil {
+		// 成功返回但 UserInfo 为空，属于非预期的异常情况
 		logger.Error(ctx, "user info is nil in success response",
 			logger.String("trace_id", traceId),
 		)
@@ -152,8 +163,8 @@ func Login(c *gin.Context) {
 		logger.Duration("auth_duration", duration),
 	)
 
-	// 6. 生成Token
-	// 获取或生成设备ID
+	// 6. 令牌生成逻辑
+	// 优先从 Header 获取设备唯一标识，若无则生成一个新的 UUID 标识当前设备
 	deviceId := c.GetHeader("X-Device-ID")
 	if deviceId == "" {
 		deviceId = util.NewUUID()
@@ -164,8 +175,10 @@ func Login(c *gin.Context) {
 	}
 
 	tokenStartTime := time.Now()
+	// 生成 Access Token，用于后续接口请求的身份校验
 	accessToken, err := utils.GenerateToken(grpcResp.UserInfo.Uuid, deviceId)
 	if err != nil {
+		// Token 生成失败通常是内部算法或 JWT 配置问题
 		logger.Error(ctx, "generate access token failed",
 			logger.String("trace_id", traceId),
 			logger.String("user_uuid", utils.MaskUUID(grpcResp.UserInfo.Uuid)),
@@ -178,8 +191,10 @@ func Login(c *gin.Context) {
 		return
 	}
 
+	// 生成 Refresh Token，用于 Access Token 过期后的无感刷新
 	refreshToken, err := utils.GenerateRefreshToken(grpcResp.UserInfo.Uuid, deviceId)
 	if err != nil {
+		// Refresh Token 生成失败也视为系统异常
 		logger.Error(ctx, "generate refresh token failed",
 			logger.String("trace_id", traceId),
 			logger.String("user_uuid", utils.MaskUUID(grpcResp.UserInfo.Uuid)),
