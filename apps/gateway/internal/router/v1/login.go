@@ -5,6 +5,7 @@ import (
 	"ChatServer/apps/gateway/internal/middleware"
 	"ChatServer/apps/gateway/internal/pb"
 	"ChatServer/apps/gateway/internal/utils"
+	userpb "ChatServer/apps/user/pb" // 引入user服务的protobuf消息类型，使用别名避免冲突
 	"ChatServer/consts"
 	"ChatServer/pkg/logger"
 	"ChatServer/pkg/util"
@@ -86,7 +87,7 @@ func Login(c *gin.Context) {
 	// 4. 调用用户服务进行身份认证(gRPC)
 	startTime := time.Now()
 
-	grpcReq := &pb.LoginRequest{
+	grpcReq := &userpb.LoginRequest{
 		Telephone: req.Telephone,
 		Password:  req.Password,
 	}
