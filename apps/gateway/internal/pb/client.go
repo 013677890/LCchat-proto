@@ -23,7 +23,7 @@ var (
 func InitUserServiceClient(addr string) error {
 	ctx := context.Background()
 
-	logger.Info(ctx, "Initializing user service gRPC client",
+	logger.Info(ctx, "初始化用户服务 gRPC 客户端",
 		logger.String("address", addr),
 	)
 
@@ -37,7 +37,7 @@ func InitUserServiceClient(addr string) error {
 		),
 	)
 	if err != nil {
-		logger.Error(ctx, "Failed to create gRPC connection",
+		logger.Error(ctx, "创建 gRPC 连接失败",
 			logger.ErrorField("error", err),
 			logger.String("address", addr),
 		)
@@ -47,7 +47,7 @@ func InitUserServiceClient(addr string) error {
 	userServiceConn = conn
 	userServiceClient = userpb.NewUserServiceClient(conn)
 
-	logger.Info(ctx, "User service gRPC client initialized successfully",
+	logger.Info(ctx, "用户服务 gRPC 客户端初始化成功",
 		logger.String("address", addr),
 	)
 
@@ -58,16 +58,16 @@ func InitUserServiceClient(addr string) error {
 func CloseUserServiceClient() error {
 	ctx := context.Background()
 
-	logger.Info(ctx, "Closing user service gRPC client")
+	logger.Info(ctx, "关闭用户服务 gRPC 客户端")
 
 	if userServiceConn != nil {
 		if err := userServiceConn.Close(); err != nil {
-			logger.Error(ctx, "Failed to close gRPC connection",
+			logger.Error(ctx, "关闭 gRPC 连接失败",
 				logger.ErrorField("error", err),
 			)
 			return err
 		}
-		logger.Info(ctx, "User service gRPC client closed successfully")
+		logger.Info(ctx, "用户服务 gRPC 客户端已关闭")
 	}
 
 	return nil
@@ -88,20 +88,20 @@ func Login(ctx context.Context, req *userpb.LoginRequest) (*userpb.LoginResponse
 		return nil, fmt.Errorf("user service client not initialized")
 	}
 
-	logger.Debug(ctx, "Calling user service Login",
+	logger.Debug(ctx, "调用用户服务登录",
 		logger.String("telephone", req.Telephone),
 	)
 
 	resp, err := client.Login(ctx, req)
 	if err != nil {
-		logger.Error(ctx, "Failed to call user service Login",
+		logger.Error(ctx, "调用用户服务登录失败",
 			logger.ErrorField("error", err),
 			logger.String("telephone", req.Telephone),
 		)
 		return nil, err
 	}
 
-	logger.Debug(ctx, "Received login response from user service",
+	logger.Debug(ctx, "收到用户服务登录响应",
 		logger.Int("code", int(resp.Code)),
 		logger.String("message", resp.Message),
 	)
@@ -126,7 +126,7 @@ func LoginWithRetry(ctx context.Context, req *userpb.LoginRequest, maxRetries in
 				backoff = time.Second // 最大延迟1秒
 			}
 
-			logger.Warn(ctx, "Retrying login request after backoff",
+			logger.Warn(ctx, "延迟后重试登录请求",
 				logger.Int("attempt", attempt+1),
 				logger.Int("max_retries", maxRetries),
 				logger.Duration("backoff", backoff),
@@ -144,7 +144,7 @@ func LoginWithRetry(ctx context.Context, req *userpb.LoginRequest, maxRetries in
 		if err == nil {
 			// 成功则直接返回
 			if attempt > 0 {
-				logger.Info(ctx, "Login retry succeeded",
+				logger.Info(ctx, "登录重试成功",
 					logger.Int("attempt", attempt+1),
 					logger.String("telephone", req.Telephone),
 				)
@@ -154,7 +154,7 @@ func LoginWithRetry(ctx context.Context, req *userpb.LoginRequest, maxRetries in
 
 		// 记录错误
 		lastErr = err
-		logger.Warn(ctx, "Login attempt failed",
+		logger.Warn(ctx, "登录尝试失败",
 			logger.Int("attempt", attempt+1),
 			logger.Int("max_retries", maxRetries),
 			logger.ErrorField("error", err),
@@ -167,7 +167,7 @@ func LoginWithRetry(ctx context.Context, req *userpb.LoginRequest, maxRetries in
 	}
 
 	// 所有重试都失败
-	logger.Error(ctx, "All login retry attempts failed",
+	logger.Error(ctx, "所有登录重试均失败",
 		logger.Int("max_retries", maxRetries),
 		logger.ErrorField("last_error", lastErr),
 	)

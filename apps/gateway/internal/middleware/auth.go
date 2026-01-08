@@ -18,7 +18,7 @@ func JWTAuthMiddleware() gin.HandlerFunc {
 		// 1. 从 Header 中获取 Authorization
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
-			logger.Warn(ctx, "missing authorization header",
+			logger.Warn(ctx, "缺少认证请求头",
 				logger.String("path", c.Request.URL.Path),
 				logger.String("method", c.Request.Method),
 			)
@@ -33,7 +33,7 @@ func JWTAuthMiddleware() gin.HandlerFunc {
 		// 2. 验证格式: "Bearer <token>"
 		parts := strings.SplitN(authHeader, " ", 2)
 		if len(parts) != 2 || parts[0] != "Bearer" {
-			logger.Warn(ctx, "invalid authorization header format",
+			logger.Warn(ctx, "认证请求头格式无效",
 				logger.String("header", authHeader),
 			)
 			c.JSON(http.StatusUnauthorized, gin.H{
@@ -49,7 +49,7 @@ func JWTAuthMiddleware() gin.HandlerFunc {
 		// 3. 解析并验证 Token
 		claims, err := utils.ParseToken(tokenString)
 		if err != nil {
-			logger.Warn(ctx, "token validation failed",
+			logger.Warn(ctx, "Token 验证失败",
 				logger.String("error", err.Error()),
 				logger.String("ip", c.ClientIP()),
 			)
@@ -65,7 +65,7 @@ func JWTAuthMiddleware() gin.HandlerFunc {
 		c.Set("user_uuid", claims.UserUUID)
 		c.Set("device_id", claims.DeviceID)
 
-		logger.Info(ctx, "user authenticated",
+		logger.Info(ctx, "用户认证通过",
 			logger.String("user_uuid", claims.UserUUID),
 			logger.String("device_id", claims.DeviceID),
 			logger.String("path", c.Request.URL.Path),

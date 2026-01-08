@@ -33,7 +33,7 @@ func Login(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		// 如果 JSON 绑定失败，说明客户端发送的数据格式有误或缺少必要字段
 		// 记录警告日志，包含 trace_id 和 客户端 IP 以便排查
-		logger.Warn(ctx, "login request bind failed",
+		logger.Warn(ctx, "登录请求参数绑定失败",
 			logger.String("trace_id", traceId),
 			logger.String("ip", ip),
 			logger.ErrorField("error", err),
@@ -47,7 +47,7 @@ func Login(c *gin.Context) {
 	}
 
 	// 2. 记录登录请求(脱敏处理)
-	logger.Info(ctx, "login request received",
+	logger.Info(ctx, "收到登录请求",
 		logger.String("trace_id", traceId),
 		logger.String("ip", ip),
 		logger.String("telephone", utils.MaskTelephone(req.Telephone)),
@@ -59,7 +59,7 @@ func Login(c *gin.Context) {
 	// 3. 业务参数合法性校验
 	if len(req.Telephone) != 11 {
 		// 校验手机号是否为 11 位，若不符合则直接拦截，减少后端服务压力
-		logger.Warn(ctx, "login validation failed: invalid telephone",
+		logger.Warn(ctx, "登录验证失败：手机号无效",
 			logger.String("trace_id", traceId),
 			logger.String("ip", ip),
 			logger.String("telephone", utils.MaskTelephone(req.Telephone)),
@@ -73,7 +73,7 @@ func Login(c *gin.Context) {
 
 	if len(req.Password) == 0 {
 		// 密码不能为空，这是最基本的输入校验
-		logger.Warn(ctx, "login validation failed: empty password",
+		logger.Warn(ctx, "登录验证失败：密码为空",
 			logger.String("trace_id", traceId),
 			logger.String("ip", ip),
 		)
@@ -92,7 +92,7 @@ func Login(c *gin.Context) {
 		Password:  req.Password,
 	}
 
-	logger.Debug(ctx, "sending gRPC request to user service",
+	logger.Debug(ctx, "发送 gRPC 请求到用户服务",
 		logger.String("trace_id", traceId),
 		logger.String("telephone", utils.MaskTelephone(req.Telephone)),
 	)
@@ -104,7 +104,7 @@ func Login(c *gin.Context) {
 	if err != nil {
 		// 如果 gRPC 调用返回错误，可能是网络抖动或 User 服务异常
 		// 记录错误日志，并向客户端返回 500 错误，保护内部服务细节
-		logger.Error(ctx, "gRPC call to user service failed",
+		logger.Error(ctx, "调用用户服务 gRPC 失败",
 			logger.String("trace_id", traceId),
 			logger.String("ip", ip),
 			logger.String("telephone", utils.MaskTelephone(req.Telephone)),
@@ -118,7 +118,7 @@ func Login(c *gin.Context) {
 		return
 	}
 
-	logger.Info(ctx, "received gRPC response from user service",
+	logger.Info(ctx, "收到用户服务 gRPC 响应",
 		logger.String("trace_id", traceId),
 		logger.Int("code", int(grpcResp.Code)),
 		logger.String("message", grpcResp.Message),
@@ -129,7 +129,7 @@ func Login(c *gin.Context) {
 	if grpcResp.Code != 0 {
 		// User 服务返回非 0 状态码，表示业务逻辑上的失败（如密码错误、账号锁定等）
 		// 将业务错误透传给前端
-		logger.Warn(ctx, "user authentication failed",
+		logger.Warn(ctx, "用户认证失败",
 			logger.String("trace_id", traceId),
 			logger.String("ip", ip),
 			logger.String("telephone", utils.MaskTelephone(req.Telephone)),
@@ -146,7 +146,7 @@ func Login(c *gin.Context) {
 
 	if grpcResp.UserInfo == nil {
 		// 成功返回但 UserInfo 为空，属于非预期的异常情况
-		logger.Error(ctx, "user info is nil in success response",
+		logger.Error(ctx, "成功响应中用户信息为空",
 			logger.String("trace_id", traceId),
 		)
 		c.JSON(500, gin.H{
@@ -156,7 +156,7 @@ func Login(c *gin.Context) {
 		return
 	}
 
-	logger.Info(ctx, "user authentication successful",
+	logger.Info(ctx, "用户认证成功",
 		logger.String("trace_id", traceId),
 		logger.String("user_uuid", utils.MaskUUID(grpcResp.UserInfo.Uuid)),
 		logger.String("telephone", utils.MaskTelephone(grpcResp.UserInfo.Telephone)),
@@ -169,7 +169,7 @@ func Login(c *gin.Context) {
 	deviceId := c.GetHeader("X-Device-ID")
 	if deviceId == "" {
 		deviceId = util.NewUUID()
-		logger.Debug(ctx, "no device id in header, generated new one",
+		logger.Debug(ctx, "请求头中无设备ID，生成新设备ID",
 			logger.String("trace_id", traceId),
 			logger.String("device_id", deviceId),
 		)
@@ -180,7 +180,7 @@ func Login(c *gin.Context) {
 	accessToken, err := utils.GenerateToken(grpcResp.UserInfo.Uuid, deviceId)
 	if err != nil {
 		// Token 生成失败通常是内部算法或 JWT 配置问题
-		logger.Error(ctx, "generate access token failed",
+		logger.Error(ctx, "生成 Access Token 失败",
 			logger.String("trace_id", traceId),
 			logger.String("user_uuid", utils.MaskUUID(grpcResp.UserInfo.Uuid)),
 			logger.ErrorField("error", err),
@@ -196,7 +196,7 @@ func Login(c *gin.Context) {
 	refreshToken, err := utils.GenerateRefreshToken(grpcResp.UserInfo.Uuid, deviceId)
 	if err != nil {
 		// Refresh Token 生成失败也视为系统异常
-		logger.Error(ctx, "generate refresh token failed",
+		logger.Error(ctx, "生成 Refresh Token 失败",
 			logger.String("trace_id", traceId),
 			logger.String("user_uuid", utils.MaskUUID(grpcResp.UserInfo.Uuid)),
 			logger.ErrorField("error", err),
@@ -209,7 +209,7 @@ func Login(c *gin.Context) {
 	}
 
 	tokenDuration := time.Since(tokenStartTime)
-	logger.Info(ctx, "token generated successfully",
+	logger.Info(ctx, "Token 生成成功",
 		logger.String("trace_id", traceId),
 		logger.String("user_uuid", utils.MaskUUID(grpcResp.UserInfo.Uuid)),
 		logger.String("device_id", deviceId),
@@ -236,7 +236,7 @@ func Login(c *gin.Context) {
 
 	// 8. 记录登录成功日志
 	totalDuration := time.Since(startTime)
-	logger.Info(ctx, "login successful",
+	logger.Info(ctx, "登录成功",
 		logger.String("trace_id", traceId),
 		logger.String("ip", ip),
 		logger.String("user_uuid", utils.MaskUUID(grpcResp.UserInfo.Uuid)),
