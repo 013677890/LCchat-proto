@@ -8,6 +8,7 @@ import (
 	userpb "ChatServer/apps/user/pb" // 引入user服务的protobuf消息类型，使用别名避免冲突
 	"ChatServer/consts"
 	"ChatServer/pkg/logger"
+	"ChatServer/pkg/result"
 	"ChatServer/pkg/util"
 	"time"
 
@@ -32,30 +33,20 @@ func Login(c *gin.Context) {
 	var req dto.LoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		// 参数错误由客户端输入导致,属于正常业务流程,不记录日志
-		c.JSON(400, gin.H{
-			"code":    consts.CodeParamError,
-			"message": consts.GetMessage(consts.CodeParamError),
-			"errors":  []gin.H{{"message": err.Error()}},
-		})
+		result.Fail(c, nil, consts.CodeParamError)
 		return
 	}
 
 	// 2. 业务参数合法性校验
 	if len(req.Telephone) != 11 {
 		// 用户输入错误,属于正常业务流程,不记录日志
-		c.JSON(400, gin.H{
-			"code":    consts.CodePhoneError,
-			"message": consts.GetMessage(consts.CodePhoneError),
-		})
+		result.Fail(c, nil, consts.CodePhoneError)
 		return
 	}
 
 	if len(req.Password) == 0 {
 		// 用户输入错误,属于正常业务流程,不记录日志
-		c.JSON(400, gin.H{
-			"code":    consts.CodeParamError,
-			"message": consts.GetMessage(consts.CodeParamError),
-		})
+		result.Fail(c, nil, consts.CodeParamError)
 		return
 	}
 
@@ -74,38 +65,27 @@ func Login(c *gin.Context) {
 	if err != nil {
 		// 所有重试失败,记录错误日志
 		logger.Error(ctx, "调用用户服务 gRPC 失败",
-			logger.String("trace_id", traceId),
 			logger.String("ip", ip),
 			logger.String("telephone", utils.MaskTelephone(req.Telephone)),
 			logger.ErrorField("error", err),
 			logger.Duration("duration", duration),
 		)
-		c.JSON(500, gin.H{
-			"code":    30001,
-			"message": "服务暂时不可用",
-		})
+		result.Fail(c, nil, consts.CodeInternalError)
 		return
 	}
 
 	// 4. 处理用户服务返回的业务响应
 	if grpcResp.Code != 0 {
 		// 用户认证失败(如密码错误、账号锁定等),属于正常业务流程,不记录日志
-		c.JSON(400, gin.H{
-			"code":    grpcResp.Code,
-			"message": grpcResp.Message,
-		})
+		result.Fail(c, nil, grpcResp.Code)
 		return
 	}
 
 	if grpcResp.UserInfo == nil {
 		// 成功返回但 UserInfo 为空，属于非预期的异常情况
 		logger.Error(ctx, "成功响应中用户信息为空",
-			logger.String("trace_id", traceId),
 		)
-		c.JSON(500, gin.H{
-			"code":    30001,
-			"message": "服务器内部错误",
-		})
+		result.Fail(c, nil, consts.CodeInternalError)
 		return
 	}
 
@@ -114,8 +94,7 @@ func Login(c *gin.Context) {
 	deviceId := c.GetHeader("X-Device-ID")
 	if deviceId == "" {
 		deviceId = util.NewUUID()
-		logger.Debug(ctx, "请求头中无设备ID，生成新设备ID",
-			logger.String("trace_id", traceId),
+		logger.Debug(ctx, "请求头中无设备ID,生成新设备ID",
 			logger.String("device_id", deviceId),
 		)
 	}
@@ -125,14 +104,10 @@ func Login(c *gin.Context) {
 	if err != nil {
 		// Token 生成失败通常是内部算法或 JWT 配置问题
 		logger.Error(ctx, "生成 Access Token 失败",
-			logger.String("trace_id", traceId),
 			logger.String("user_uuid", utils.MaskUUID(grpcResp.UserInfo.Uuid)),
 			logger.ErrorField("error", err),
 		)
-		c.JSON(500, gin.H{
-			"code":    30001,
-			"message": "服务器内部错误",
-		})
+		result.Fail(c, nil, consts.CodeInternalError)
 		return
 	}
 
@@ -141,14 +116,10 @@ func Login(c *gin.Context) {
 	if err != nil {
 		// Refresh Token 生成失败也视为系统异常
 		logger.Error(ctx, "生成 Refresh Token 失败",
-			logger.String("trace_id", traceId),
 			logger.String("user_uuid", utils.MaskUUID(grpcResp.UserInfo.Uuid)),
 			logger.ErrorField("error", err),
 		)
-		c.JSON(500, gin.H{
-			"code":    30001,
-			"message": "服务器内部错误",
-		})
+		result.Fail(c, nil, consts.CodeInternalError)
 		return
 	}
 
@@ -182,9 +153,5 @@ func Login(c *gin.Context) {
 		logger.Duration("total_duration", totalDuration),
 	)
 
-	c.JSON(200, gin.H{
-		"code":    0,
-		"message": "登录成功",
-		"data":    response,
-	})
+	result.Success(c, response)
 }

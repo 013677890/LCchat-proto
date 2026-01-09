@@ -36,3 +36,9 @@ type LoginResponse struct {
 	UserInfo     UserInfo  `json:"userInfo"`     // 用户信息
 }
 
+// LoginRouterToService 登录路由到服务请求 DTO
+type LoginRouterToService struct {
+	Telephone  string `json:"telephone" binding:"required"`  // 手机号
+	Password   string `json:"password" binding:"required"`   // 密码
+}
+
