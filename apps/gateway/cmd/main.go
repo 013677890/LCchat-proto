@@ -1,6 +1,7 @@
 package main
 
 import (
+	"ChatServer/apps/gateway/internal/pb"
 	"ChatServer/apps/gateway/internal/router"
 	"ChatServer/config"
 	"ChatServer/pkg/logger"
@@ -22,7 +23,7 @@ func main() {
 	cfg := config.DefaultLoggerConfig()
 	l, err := logger.Build(cfg)
 	if err != nil {
-		fmt.Printf("Failed to build logger: %v\n", err)
+		fmt.Printf("初始化日志失败: %v\n", err)
 		os.Exit(1)
 	}
 	logger.ReplaceGlobal(l)
@@ -34,9 +35,23 @@ func main() {
 		}
 	}()
 
-	logger.Info(ctx, "Gateway service initializing...")
+	logger.Info(ctx, "Gateway 服务初始化中...")
 
-	// 2. 初始化路由
+	// 2. 初始化用户服务gRPC客户端
+	// TODO: 从配置文件读取user服务地址
+	userServiceAddr := "localhost:9090"
+	if err := pb.InitUserServiceClient(userServiceAddr); err != nil {
+		logger.Error(ctx, "初始化用户服务 gRPC 客户端失败", logger.ErrorField("error", err))
+		os.Exit(1)
+	}
+	defer func() {
+		if err := pb.CloseUserServiceClient(); err != nil {
+			logger.Error(ctx, "关闭用户服务 gRPC 客户端失败", logger.ErrorField("error", err))
+		}
+	}()
+
+	// 3. 初始化路由
+	// Gin 模式设置: ReleaseMode/DebugMode/TestMode
 	gin.SetMode(gin.ReleaseMode)
 	r := router.InitRouter()
 
@@ -54,18 +69,18 @@ func main() {
 
 	// 4. 启动服务器（在 goroutine 中）
 	go func() {
-		logger.Info(ctx, "Gateway server starting",
+		logger.Info(ctx, "Gateway 服务器启动中",
 			logger.String("address", addr),
 			logger.Int("port", port),
 		)
 
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.Error(ctx, "Server start failed", logger.ErrorField("error", err))
+			logger.Error(ctx, "服务器启动失败", logger.ErrorField("error", err))
 			os.Exit(1)
 		}
 	}()
 
-	logger.Info(ctx, "Gateway server started successfully, press Ctrl+C to shutdown")
+	logger.Info(ctx, "Gateway 服务器启动成功，按 Ctrl+C 关闭")
 
 	// 5. 优雅停机
 	quit := make(chan os.Signal, 1)
@@ -74,7 +89,7 @@ func main() {
 
 	// 阻塞等待信号
 	sig := <-quit
-	logger.Info(ctx, "Received shutdown signal, starting graceful shutdown...",
+	logger.Info(ctx, "收到关闭信号，开始优雅停机...",
 		logger.String("signal", sig.String()),
 	)
 
@@ -84,9 +99,9 @@ func main() {
 
 	// 关闭 HTTP 服务器
 	if err := srv.Shutdown(shutdownCtx); err != nil {
-		logger.Error(ctx, "Server forced to shutdown", logger.ErrorField("error", err))
+		logger.Error(ctx, "服务器强制关闭", logger.ErrorField("error", err))
 		os.Exit(1)
 	}
 
-	logger.Info(ctx, "Gateway server exited gracefully")
+	logger.Info(ctx, "Gateway 服务器已优雅退出")
 }

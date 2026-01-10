@@ -3,7 +3,6 @@
 > **版本**: v1.0.0
 > **更新时间**: 2026-01-08
 > **维护人**: 开发团队
-> **协议**: RESTful API
 > **数据格式**: JSON
 
 ---
@@ -119,6 +118,9 @@ GET /api/v1/messages?page=1&pageSize=20&sortField=createdAt&sortOrder=desc
   "birthday": "1995-06-15"
 }
 ```
+
+#### 2.1.6 状态码
+- 只要是业务 都返回200OK
 
 ### 2.2 版本控制
 
