@@ -7,7 +7,9 @@ import (
 	"time"
 
 	"ChatServer/apps/gateway/internal/middleware"
+	"ChatServer/pkg/logger"
 
+	"github.com/sony/gobreaker"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
@@ -17,6 +19,8 @@ var (
 	userServiceClient userpb.UserServiceClient
 	// userServiceConn 用户服务的gRPC连接
 	userServiceConn *grpc.ClientConn
+	// userServiceBreaker 用户服务的熔断器
+	userServiceBreaker *gobreaker.CircuitBreaker
 )
 
 // gRPC 服务配置，定义重试策略
@@ -39,16 +43,37 @@ const retryPolicy = `{
 // InitUserServiceClient 初始化用户服务gRPC客户端
 // addr: 用户服务地址，格式为 "host:port"，例如 "localhost:9090"
 func InitUserServiceClient(addr string) error {
+	// 1. 初始化熔断器配置
+	userServiceBreaker = gobreaker.NewCircuitBreaker(gobreaker.Settings{
+		Name:        "user-service",
+		MaxRequests: 3,                // 半开状态下最多允许 3 个请求尝试
+		Interval:    15 * time.Second,  // 清除计数的时间间隔
+		Timeout:     45 * time.Second, // 熔断器开启后多久尝试进入半开状态
+		ReadyToTrip: func(counts gobreaker.Counts) bool {
+			// 失败率超过 50% 且连续失败次数超过 5 次时触发熔断
+			failureRatio := float64(counts.TotalFailures) / float64(counts.Requests)
+			return counts.Requests >= 5 && failureRatio >= 0.5
+		},
+		OnStateChange: func(name string, from, to gobreaker.State) {
+			logger.Info(context.Background(), "熔断器状态变化",
+				logger.String("name", name),
+				logger.String("from", from.String()),
+				logger.String("to", to.String()),
+			)
+		},
+	})
 
-	// 建立gRPC连接
-	// 使用 insecure credentials（实际生产环境应该使用TLS）
-	// 配置自动重试策略
+	// 2. 建立gRPC连接并注入拦截器
 	conn, err := grpc.NewClient(
 		addr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithDefaultServiceConfig(retryPolicy), // 应用重试策略
 		grpc.WithDefaultCallOptions(
 			grpc.MaxCallRecvMsgSize(4*1024*1024), // 4MB接收大小
+		),
+		// 注入熔断拦截器
+		grpc.WithChainUnaryInterceptor(
+			middleware.CircuitBreakerInterceptor(userServiceBreaker),
 		),
 	)
 	if err != nil {

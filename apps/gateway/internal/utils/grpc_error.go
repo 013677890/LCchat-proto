@@ -38,6 +38,14 @@ func ExtractGRPCError(err error) *GRPCError {
 	// User 服务可以使用 status.WithDetails() 附加业务错误码
 	businessCode := grpcCodeToBusinessCode(st.Code())
 
+	// 特殊处理：如果是熔断器开启导致的错误
+	if st.Code() == codes.Unavailable && st.Message() == "circuit breaker [user-service] is open" {
+		return &GRPCError{
+			Code:    consts.CodeServiceUnavailable,
+			Message: "系统繁忙，请稍后再试（服务熔断）",
+		}
+	}
+
 	// 如果有自定义消息，使用 gRPC 消息；否则使用业务错误码对应的消息
 	message := st.Message()
 	if message == "" {
