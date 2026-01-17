@@ -6,14 +6,16 @@ WORKDIR /app
 # 1. 设置国内代理
 ENV GOPROXY=https://goproxy.cn,direct
 
-# 2. 拷贝 go.mod 下载依赖 (当前没有 go.sum，先只拷 go.mod)
+# 2. 拷贝 go.mod 和 go.sum 下载依赖
 COPY go.mod ./
-# 如果未来有了依赖，记得生成 go.sum 并取消下面这行的注释
-# COPY go.sum ./
+COPY go.sum ./
 RUN go mod download
 
 # 3. 拷贝源码
 COPY . .
 
-# 4. 运行应用
-CMD ["go", "run", "./main.go"]
+# 4. 暴露端口（在 docker-compose 中会覆盖）
+EXPOSE 8080 9090
+
+# 注意：不指定 CMD，具体的启动命令由 docker-compose.yml 中的各服务定义
+# 每个服务的 working_dir 和 command 在 docker-compose.yml 中指定

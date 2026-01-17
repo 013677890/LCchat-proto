@@ -1,37 +1,84 @@
 version: '3.8'
 
 services:
-  # --- 后端服务 ---
-  app:
-    build: .
-    container_name: backend
+  # --- Gateway 网关服务 ---
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: gateway
+    working_dir: /app/apps/gateway
+    command: ["go", "run", "cmd/main.go"]
     ports:
       - "8080:8080"
     volumes:
-      # 把本地代码挂载进容器 /app
-      # 虽然我们不用热重载，但挂载必须有，否则你修改代码容器里看不到
+      # 把本地代码挂载进容器，便于开发调试
       - ./:/app
     environment:
-      # 连接数据库的服务名
+      # 服务配置
+      GIN_MODE: release
+      USER_SERVICE_ADDR: user:9090
+    depends_on:
+      - user
+      - mysql
+      - redis
+    networks:
+      - chat-network
+
+  # --- User 用户服务 ---
+  user:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: user
+    working_dir: /app/apps/user
+    command: ["go", "run", "cmd/main.go"]
+    ports:
+      - "9090:9090"
+    volumes:
+      # 把本地代码挂载进容器，便于开发调试
+      - ./:/app
+    environment:
+      # 数据库配置
       DB_HOST: mysql
+      DB_PORT: 3306
+      DB_USER: root
+      DB_PASSWORD: root
+      DB_NAME: chat_server
+      # Redis 配置
       REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ""
+      REDIS_DB: 0
     depends_on:
       - mysql
       - redis
+    networks:
+      - chat-network
 
-  # --- 数据库服务 (保持不变) ---
+  # --- MySQL 数据库服务 ---
   mysql:
     image: mysql:8.0
     container_name: mysql
     environment:
       MYSQL_ROOT_PASSWORD: root
       MYSQL_DATABASE: chat_server
+      MYSQL_USER: chat_user
+      MYSQL_PASSWORD: chat_password
     ports:
       - "3306:3306"
     volumes:
       - ./data/mysql:/var/lib/mysql
+      - ./config/mysql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - chat-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
-  # --- 缓存服务 (保持不变) ---
+  # --- Redis 缓存服务 ---
   redis:
     image: redis:7.0
     container_name: redis
@@ -39,3 +86,14 @@ services:
       - "6379:6379"
     volumes:
       - ./data/redis:/data
+    networks:
+      - chat-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+networks:
+  chat-network:
+    driver: bridge
