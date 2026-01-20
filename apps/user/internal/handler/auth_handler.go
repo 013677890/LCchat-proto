@@ -33,7 +33,7 @@ func (h *AuthHandler) Register(ctx context.Context, req *pb.RegisterRequest) (*p
 func (h *AuthHandler) Login(ctx context.Context, req *pb.LoginRequest) (*pb.LoginResponse, error) {
 	// 1. 转换gRPC请求为DTO
 	loginReq := &dto.LoginRequest{
-		Telephone:  req.Account, // account 可以是手机号或邮箱
+		Account:    req.Account, // account 可以是邮箱
 		Password:   req.Password,
 		DeviceInfo: req.DeviceInfo,
 	}

@@ -8,11 +8,11 @@ import (
 
 // RegisterRequest 注册请求 DTO
 type RegisterRequest struct {
-	Email      string `json:"email" binding:"required,email"`           // 邮箱
-	Password   string `json:"password" binding:"required,min=6,max=20"` // 密码
-	VerifyCode string `json:"verifyCode" binding:"required,len=6"`      // 验证码
-	Nickname   string `json:"nickname" binding:"required,min=2,max=20"` // 昵称
-	Telephone  string `json:"telephone" binding:"required,len=11"`      // 手机号
+	Email      string `json:"email" binding:"required,email"`            // 邮箱（必填）
+	Password   string `json:"password" binding:"required,min=6,max=20"`  // 密码（必填）
+	VerifyCode string `json:"verifyCode" binding:"required,len=6"`       // 验证码（必填）
+	Nickname   string `json:"nickname" binding:"omitempty,min=2,max=20"` // 昵称（可选）
+	Telephone  string `json:"telephone" binding:"omitempty,len=11"`      // 手机号（可选）
 }
 
 // RegisterResponse 注册响应 DTO

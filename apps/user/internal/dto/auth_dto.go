@@ -9,7 +9,7 @@ import (
 
 // LoginRequest 登录请求DTO
 type LoginRequest struct {
-	Telephone  string         // 手机号
+	Account    string         // 账号（手机号或邮箱）
 	Password   string         // 密码
 	DeviceInfo *pb.DeviceInfo // 设备信息
 }
@@ -33,10 +33,11 @@ type LoginByCodeResponse struct {
 
 // RegisterRequest 注册请求DTO
 type RegisterRequest struct {
-	Telephone  string         // 手机号
-	Password   string         // 密码
-	VerifyCode string         // 验证码
+	Email      string         // 邮箱（必填）
+	Password   string         // 密码（必填）
+	VerifyCode string         // 验证码（必填）
 	Nickname   string         // 昵称（可选）
+	Telephone  string         // 手机号（可选）
 	DeviceInfo *pb.DeviceInfo // 设备信息
 }
 
