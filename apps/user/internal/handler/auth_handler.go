@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"ChatServer/apps/user/internal/dto"
 	"ChatServer/apps/user/internal/service"
 	pb "ChatServer/apps/user/pb"
 	"context"
@@ -23,7 +22,7 @@ func NewAuthHandler(authService service.IAuthService) *AuthHandler {
 
 // Register 用户注册
 func (h *AuthHandler) Register(ctx context.Context, req *pb.RegisterRequest) (*pb.RegisterResponse, error) {
-	return nil, nil
+	return h.authService.Register(ctx, req)
 }
 
 // Login 用户登录（密码）
@@ -31,52 +30,36 @@ func (h *AuthHandler) Register(ctx context.Context, req *pb.RegisterRequest) (*p
 //   - 成功时返回(response, nil)
 //   - 失败时返回(nil, status.Error(...))
 func (h *AuthHandler) Login(ctx context.Context, req *pb.LoginRequest) (*pb.LoginResponse, error) {
-	// 1. 转换gRPC请求为DTO
-	loginReq := &dto.LoginRequest{
-		Account:    req.Account, // account 可以是邮箱
-		Password:   req.Password,
-		DeviceInfo: req.DeviceInfo,
-	}
-
-	// 2. 调用Service层执行登录业务流程
-	loginResp, err := h.authService.Login(ctx, loginReq)
-	if err != nil {
-		return nil, err
-	}
-
-	// 3. 转换DTO为gRPC响应
-	// 注意：Token 相关字段由 Gateway 层生成，这里暂时返回空值
-	return &pb.LoginResponse{
-		UserInfo: dto.ConvertToProtoUserInfo(loginResp.UserInfo),
-	}, nil
+	// 直接透传 Proto 到 Service 层
+	return h.authService.Login(ctx, req)
 }
 
 // LoginByCode 验证码登录
 func (h *AuthHandler) LoginByCode(ctx context.Context, req *pb.LoginByCodeRequest) (*pb.LoginByCodeResponse, error) {
-	return nil, nil
+	return h.authService.LoginByCode(ctx, req)
 }
 
 // SendVerifyCode 发送验证码
 func (h *AuthHandler) SendVerifyCode(ctx context.Context, req *pb.SendVerifyCodeRequest) (*pb.SendVerifyCodeResponse, error) {
-	return nil, nil
+	return h.authService.SendVerifyCode(ctx, req)
 }
 
 // VerifyCode 校验验证码
 func (h *AuthHandler) VerifyCode(ctx context.Context, req *pb.VerifyCodeRequest) (*pb.VerifyCodeResponse, error) {
-	return nil, nil
+	return h.authService.VerifyCode(ctx, req)
 }
 
 // RefreshToken 刷新Token
 func (h *AuthHandler) RefreshToken(ctx context.Context, req *pb.RefreshTokenRequest) (*pb.RefreshTokenResponse, error) {
-	return nil, nil
+	return h.authService.RefreshToken(ctx, req)
 }
 
 // Logout 用户登出
 func (h *AuthHandler) Logout(ctx context.Context, req *pb.LogoutRequest) (*pb.LogoutResponse, error) {
-	return nil, nil
+	return &pb.LogoutResponse{}, h.authService.Logout(ctx, req)
 }
 
 // ResetPassword 重置密码
 func (h *AuthHandler) ResetPassword(ctx context.Context, req *pb.ResetPasswordRequest) (*pb.ResetPasswordResponse, error) {
-	return nil, nil
+	return &pb.ResetPasswordResponse{}, h.authService.ResetPassword(ctx, req)
 }

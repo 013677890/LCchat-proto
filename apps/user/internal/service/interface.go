@@ -1,7 +1,7 @@
 package service
 
 import (
-	"ChatServer/apps/user/internal/dto"
+	pb "ChatServer/apps/user/pb"
 	"context"
 )
 
@@ -11,28 +11,28 @@ import (
 // 职责：用户注册、登录、登出、Token管理、验证码
 type IAuthService interface {
 	// Register 用户注册
-	Register(ctx context.Context, req *dto.RegisterRequest) (*dto.RegisterResponse, error)
+	Register(ctx context.Context, req *pb.RegisterRequest) (*pb.RegisterResponse, error)
 
 	// Login 用户登录（密码）
-	Login(ctx context.Context, req *dto.LoginRequest) (*dto.LoginResponse, error)
+	Login(ctx context.Context, req *pb.LoginRequest) (*pb.LoginResponse, error)
 
 	// LoginByCode 验证码登录
-	LoginByCode(ctx context.Context, req *dto.LoginByCodeRequest) (*dto.LoginByCodeResponse, error)
+	LoginByCode(ctx context.Context, req *pb.LoginByCodeRequest) (*pb.LoginByCodeResponse, error)
 
 	// SendVerifyCode 发送验证码
-	SendVerifyCode(ctx context.Context, req *dto.SendVerifyCodeRequest) (*dto.SendVerifyCodeResponse, error)
+	SendVerifyCode(ctx context.Context, req *pb.SendVerifyCodeRequest) (*pb.SendVerifyCodeResponse, error)
 
 	// VerifyCode 校验验证码
-	VerifyCode(ctx context.Context, req *dto.VerifyCodeRequest) (*dto.VerifyCodeResponse, error)
+	VerifyCode(ctx context.Context, req *pb.VerifyCodeRequest) (*pb.VerifyCodeResponse, error)
 
 	// RefreshToken 刷新Token
-	RefreshToken(ctx context.Context, req *dto.RefreshTokenRequest) (*dto.RefreshTokenResponse, error)
+	RefreshToken(ctx context.Context, req *pb.RefreshTokenRequest) (*pb.RefreshTokenResponse, error)
 
 	// Logout 用户登出
-	Logout(ctx context.Context, req *dto.LogoutRequest) error
+	Logout(ctx context.Context, req *pb.LogoutRequest) error
 
 	// ResetPassword 重置密码
-	ResetPassword(ctx context.Context, req *dto.ResetPasswordRequest) error
+	ResetPassword(ctx context.Context, req *pb.ResetPasswordRequest) error
 }
 
 // ==================== 用户信息服务接口 ====================
@@ -41,37 +41,37 @@ type IAuthService interface {
 // 职责：用户个人信息管理、头像、密码修改、账号设置、二维码、注销
 type IUserService interface {
 	// GetProfile 获取个人信息
-	GetProfile(ctx context.Context) (*dto.GetProfileResponse, error)
+	GetProfile(ctx context.Context, req *pb.GetProfileRequest) (*pb.GetProfileResponse, error)
 
 	// GetOtherProfile 获取他人信息
-	GetOtherProfile(ctx context.Context, req *dto.GetOtherProfileRequest) (*dto.GetOtherProfileResponse, error)
+	GetOtherProfile(ctx context.Context, req *pb.GetOtherProfileRequest) (*pb.GetOtherProfileResponse, error)
 
 	// UpdateProfile 更新基本信息
-	UpdateProfile(ctx context.Context, req *dto.UpdateProfileRequest) (*dto.UpdateProfileResponse, error)
+	UpdateProfile(ctx context.Context, req *pb.UpdateProfileRequest) (*pb.UpdateProfileResponse, error)
 
 	// UploadAvatar 上传头像
-	UploadAvatar(ctx context.Context, req *dto.UploadAvatarRequest) (*dto.UploadAvatarResponse, error)
+	UploadAvatar(ctx context.Context, req *pb.UploadAvatarRequest) (*pb.UploadAvatarResponse, error)
 
 	// ChangePassword 修改密码
-	ChangePassword(ctx context.Context, req *dto.ChangePasswordRequest) error
+	ChangePassword(ctx context.Context, req *pb.ChangePasswordRequest) error
 
 	// ChangeEmail 绑定/换绑邮箱
-	ChangeEmail(ctx context.Context, req *dto.ChangeEmailRequest) (*dto.ChangeEmailResponse, error)
+	ChangeEmail(ctx context.Context, req *pb.ChangeEmailRequest) (*pb.ChangeEmailResponse, error)
 
 	// ChangeTelephone 绑定/换绑手机
-	ChangeTelephone(ctx context.Context, req *dto.ChangeTelephoneRequest) (*dto.ChangeTelephoneResponse, error)
+	ChangeTelephone(ctx context.Context, req *pb.ChangeTelephoneRequest) (*pb.ChangeTelephoneResponse, error)
 
 	// GetQRCode 获取用户二维码
-	GetQRCode(ctx context.Context) (*dto.GetQRCodeResponse, error)
+	GetQRCode(ctx context.Context, req *pb.GetQRCodeRequest) (*pb.GetQRCodeResponse, error)
 
 	// ParseQRCode 解析二维码
-	ParseQRCode(ctx context.Context, req *dto.ParseQRCodeRequest) (*dto.ParseQRCodeResponse, error)
+	ParseQRCode(ctx context.Context, req *pb.ParseQRCodeRequest) (*pb.ParseQRCodeResponse, error)
 
 	// DeleteAccount 注销账号
-	DeleteAccount(ctx context.Context, req *dto.DeleteAccountRequest) (*dto.DeleteAccountResponse, error)
+	DeleteAccount(ctx context.Context, req *pb.DeleteAccountRequest) (*pb.DeleteAccountResponse, error)
 
 	// BatchGetProfile 批量获取用户信息
-	BatchGetProfile(ctx context.Context, req *dto.BatchGetProfileRequest) (*dto.BatchGetProfileResponse, error)
+	BatchGetProfile(ctx context.Context, req *pb.BatchGetProfileRequest) (*pb.BatchGetProfileResponse, error)
 }
 
 // ==================== 好友服务接口 ====================
@@ -80,49 +80,49 @@ type IUserService interface {
 // 职责：搜索用户、好友申请、好友列表、备注标签
 type IFriendService interface {
 	// SearchUser 搜索用户
-	SearchUser(ctx context.Context, req *dto.SearchUserRequest) (*dto.SearchUserResponse, error)
+	SearchUser(ctx context.Context, req *pb.SearchUserRequest) (*pb.SearchUserResponse, error)
 
 	// SendFriendApply 发送好友申请
-	SendFriendApply(ctx context.Context, req *dto.SendFriendApplyRequest) (*dto.SendFriendApplyResponse, error)
+	SendFriendApply(ctx context.Context, req *pb.SendFriendApplyRequest) (*pb.SendFriendApplyResponse, error)
 
 	// GetFriendApplyList 获取好友申请列表
-	GetFriendApplyList(ctx context.Context, req *dto.GetFriendApplyListRequest) (*dto.GetFriendApplyListResponse, error)
+	GetFriendApplyList(ctx context.Context, req *pb.GetFriendApplyListRequest) (*pb.GetFriendApplyListResponse, error)
 
 	// GetSentApplyList 获取发出的申请列表
-	GetSentApplyList(ctx context.Context, req *dto.GetSentApplyListRequest) (*dto.GetSentApplyListResponse, error)
+	GetSentApplyList(ctx context.Context, req *pb.GetSentApplyListRequest) (*pb.GetSentApplyListResponse, error)
 
 	// HandleFriendApply 处理好友申请
-	HandleFriendApply(ctx context.Context, req *dto.HandleFriendApplyRequest) error
+	HandleFriendApply(ctx context.Context, req *pb.HandleFriendApplyRequest) error
 
 	// GetUnreadApplyCount 获取未读申请数量
-	GetUnreadApplyCount(ctx context.Context) (*dto.GetUnreadApplyCountResponse, error)
+	GetUnreadApplyCount(ctx context.Context, req *pb.GetUnreadApplyCountRequest) (*pb.GetUnreadApplyCountResponse, error)
 
 	// MarkApplyAsRead 标记申请已读
-	MarkApplyAsRead(ctx context.Context, req *dto.MarkApplyAsReadRequest) error
+	MarkApplyAsRead(ctx context.Context, req *pb.MarkApplyAsReadRequest) error
 
 	// GetFriendList 获取好友列表
-	GetFriendList(ctx context.Context, req *dto.GetFriendListRequest) (*dto.GetFriendListResponse, error)
+	GetFriendList(ctx context.Context, req *pb.GetFriendListRequest) (*pb.GetFriendListResponse, error)
 
 	// SyncFriendList 好友增量同步
-	SyncFriendList(ctx context.Context, req *dto.SyncFriendListRequest) (*dto.SyncFriendListResponse, error)
+	SyncFriendList(ctx context.Context, req *pb.SyncFriendListRequest) (*pb.SyncFriendListResponse, error)
 
 	// DeleteFriend 删除好友
-	DeleteFriend(ctx context.Context, req *dto.DeleteFriendRequest) error
+	DeleteFriend(ctx context.Context, req *pb.DeleteFriendRequest) error
 
 	// SetFriendRemark 设置好友备注
-	SetFriendRemark(ctx context.Context, req *dto.SetFriendRemarkRequest) error
+	SetFriendRemark(ctx context.Context, req *pb.SetFriendRemarkRequest) error
 
 	// SetFriendTag 设置好友标签
-	SetFriendTag(ctx context.Context, req *dto.SetFriendTagRequest) error
+	SetFriendTag(ctx context.Context, req *pb.SetFriendTagRequest) error
 
 	// GetTagList 获取标签列表
-	GetTagList(ctx context.Context) (*dto.GetTagListResponse, error)
+	GetTagList(ctx context.Context, req *pb.GetTagListRequest) (*pb.GetTagListResponse, error)
 
 	// CheckIsFriend 判断是否好友
-	CheckIsFriend(ctx context.Context, req *dto.CheckIsFriendRequest) (*dto.CheckIsFriendResponse, error)
+	CheckIsFriend(ctx context.Context, req *pb.CheckIsFriendRequest) (*pb.CheckIsFriendResponse, error)
 
 	// GetRelationStatus 获取关系状态
-	GetRelationStatus(ctx context.Context, req *dto.GetRelationStatusRequest) (*dto.GetRelationStatusResponse, error)
+	GetRelationStatus(ctx context.Context, req *pb.GetRelationStatusRequest) (*pb.GetRelationStatusResponse, error)
 }
 
 // ==================== 黑名单服务接口 ====================
@@ -131,16 +131,16 @@ type IFriendService interface {
 // 职责：拉黑、取消拉黑、黑名单列表、判断是否拉黑
 type IBlacklistService interface {
 	// AddBlacklist 拉黑用户
-	AddBlacklist(ctx context.Context, req *dto.AddBlacklistRequest) error
+	AddBlacklist(ctx context.Context, req *pb.AddBlacklistRequest) error
 
 	// RemoveBlacklist 取消拉黑
-	RemoveBlacklist(ctx context.Context, req *dto.RemoveBlacklistRequest) error
+	RemoveBlacklist(ctx context.Context, req *pb.RemoveBlacklistRequest) error
 
 	// GetBlacklistList 获取黑名单列表
-	GetBlacklistList(ctx context.Context, req *dto.GetBlacklistListRequest) (*dto.GetBlacklistListResponse, error)
+	GetBlacklistList(ctx context.Context, req *pb.GetBlacklistListRequest) (*pb.GetBlacklistListResponse, error)
 
 	// CheckIsBlacklist 判断是否拉黑
-	CheckIsBlacklist(ctx context.Context, req *dto.CheckIsBlacklistRequest) (*dto.CheckIsBlacklistResponse, error)
+	CheckIsBlacklist(ctx context.Context, req *pb.CheckIsBlacklistRequest) (*pb.CheckIsBlacklistResponse, error)
 }
 
 // ==================== 设备会话服务接口 ====================
@@ -149,16 +149,16 @@ type IBlacklistService interface {
 // 职责：设备列表、踢出设备、在线状态查询
 type IDeviceService interface {
 	// GetDeviceList 获取设备列表
-	GetDeviceList(ctx context.Context) (*dto.GetDeviceListResponse, error)
+	GetDeviceList(ctx context.Context, req *pb.GetDeviceListRequest) (*pb.GetDeviceListResponse, error)
 
 	// KickDevice 踢出设备
-	KickDevice(ctx context.Context, req *dto.KickDeviceRequestNew) error
+	KickDevice(ctx context.Context, req *pb.KickDeviceRequest) error
 
 	// GetOnlineStatus 获取用户在线状态
-	GetOnlineStatus(ctx context.Context, req *dto.GetOnlineStatusRequest) (*dto.GetOnlineStatusResponse, error)
+	GetOnlineStatus(ctx context.Context, req *pb.GetOnlineStatusRequest) (*pb.GetOnlineStatusResponse, error)
 
 	// BatchGetOnlineStatus 批量获取在线状态
-	BatchGetOnlineStatus(ctx context.Context, req *dto.BatchGetOnlineStatusRequest) (*dto.BatchGetOnlineStatusResponse, error)
+	BatchGetOnlineStatus(ctx context.Context, req *pb.BatchGetOnlineStatusRequest) (*pb.BatchGetOnlineStatusResponse, error)
 }
 
 // ==================== 别名类型定义（用于向后兼容）====================

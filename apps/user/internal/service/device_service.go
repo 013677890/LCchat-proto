@@ -1,8 +1,8 @@
 package service
 
 import (
-	"ChatServer/apps/user/internal/dto"
 	"ChatServer/apps/user/internal/repository"
+	pb "ChatServer/apps/user/pb"
 	"context"
 
 	"google.golang.org/grpc/codes"
@@ -22,21 +22,21 @@ func NewDeviceService(deviceRepo repository.IDeviceRepository) DeviceService {
 }
 
 // GetDeviceList 获取设备列表
-func (s *deviceServiceImpl) GetDeviceList(ctx context.Context) (*dto.GetDeviceListResponse, error) {
+func (s *deviceServiceImpl) GetDeviceList(ctx context.Context, req *pb.GetDeviceListRequest) (*pb.GetDeviceListResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "获取设备列表功能暂未实现")
 }
 
 // KickDevice 踢出设备
-func (s *deviceServiceImpl) KickDevice(ctx context.Context, req *dto.KickDeviceRequestNew) error {
+func (s *deviceServiceImpl) KickDevice(ctx context.Context, req *pb.KickDeviceRequest) error {
 	return status.Error(codes.Unimplemented, "踢出设备功能暂未实现")
 }
 
 // GetOnlineStatus 获取用户在线状态
-func (s *deviceServiceImpl) GetOnlineStatus(ctx context.Context, req *dto.GetOnlineStatusRequest) (*dto.GetOnlineStatusResponse, error) {
+func (s *deviceServiceImpl) GetOnlineStatus(ctx context.Context, req *pb.GetOnlineStatusRequest) (*pb.GetOnlineStatusResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "获取用户在线状态功能暂未实现")
 }
 
 // BatchGetOnlineStatus 批量获取在线状态
-func (s *deviceServiceImpl) BatchGetOnlineStatus(ctx context.Context, req *dto.BatchGetOnlineStatusRequest) (*dto.BatchGetOnlineStatusResponse, error) {
+func (s *deviceServiceImpl) BatchGetOnlineStatus(ctx context.Context, req *pb.BatchGetOnlineStatusRequest) (*pb.BatchGetOnlineStatusResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "批量获取在线状态功能暂未实现")
 }

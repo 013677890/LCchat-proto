@@ -22,20 +22,20 @@ func NewDeviceHandler(deviceService service.IDeviceService) *DeviceHandler {
 
 // GetDeviceList 获取设备列表
 func (h *DeviceHandler) GetDeviceList(ctx context.Context, req *pb.GetDeviceListRequest) (*pb.GetDeviceListResponse, error) {
-	return nil, nil
+	return h.deviceService.GetDeviceList(ctx, req)
 }
 
 // KickDevice 踢出设备
 func (h *DeviceHandler) KickDevice(ctx context.Context, req *pb.KickDeviceRequest) (*pb.KickDeviceResponse, error) {
-	return nil, nil
+	return &pb.KickDeviceResponse{}, h.deviceService.KickDevice(ctx, req)
 }
 
 // GetOnlineStatus 获取用户在线状态
 func (h *DeviceHandler) GetOnlineStatus(ctx context.Context, req *pb.GetOnlineStatusRequest) (*pb.GetOnlineStatusResponse, error) {
-	return nil, nil
+	return h.deviceService.GetOnlineStatus(ctx, req)
 }
 
 // BatchGetOnlineStatus 批量获取在线状态
 func (h *DeviceHandler) BatchGetOnlineStatus(ctx context.Context, req *pb.BatchGetOnlineStatusRequest) (*pb.BatchGetOnlineStatusResponse, error) {
-	return nil, nil
+	return h.deviceService.BatchGetOnlineStatus(ctx, req)
 }
