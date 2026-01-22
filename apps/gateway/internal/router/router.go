@@ -20,8 +20,12 @@ func InitRouter(authHandler *v1.AuthHandler) *gin.Engine {
 	// 追踪中间件 (生成 trace_id)
 	r.Use(util.TraceLogger())
 
+	// 客户端 IP 中间件
+	r.Use(middleware.ClientIPMiddleware())
+
 	// 日志中间件
 	r.Use(middleware.GinLogger())
+
 
 	// Prometheus 监控中间件
 	r.Use(middleware.PrometheusMiddleware())

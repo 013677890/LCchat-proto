@@ -22,6 +22,9 @@ func NewContextWithGin(c *gin.Context) context.Context {
 	if deviceID, exists := c.Get("device_id"); exists {
 		ctx = context.WithValue(ctx, "device_id", deviceID)
 	}
+	if clientIP, exists := c.Get("client_ip"); exists {
+		ctx = context.WithValue(ctx, "client_ip", clientIP.(string))
+	}
 	return ctx
 }
 
@@ -31,14 +34,20 @@ func GinLogger() gin.HandlerFunc {
 		start := time.Now()
 		path := c.Request.URL.Path
 		query := c.Request.URL.RawQuery
+		clientIP, exists := c.Get("client_ip")
+		if exists {
+			clientIP = clientIP.(string)
+		}
+		if clientIP == "" {
+			clientIP = c.ClientIP()
+		}
 		ctx := NewContextWithGin(c)
 
 		logger.Info(ctx, "请求开始",
 			logger.String("method", c.Request.Method),
 			logger.String("path", path),
 			logger.String("query", query),
-			logger.String("ip", c.ClientIP()),
-			logger.String("user-agent", c.Request.UserAgent()),
+			logger.String("ip", clientIP.(string)),
 		)
 
 		c.Next()
