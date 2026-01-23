@@ -71,6 +71,13 @@ func (c *userServiceClientImpl) VerifyCode(ctx context.Context, req *userpb.Veri
 	})
 }
 
+// Register 用户注册
+func (c *userServiceClientImpl) Register(ctx context.Context, req *userpb.RegisterRequest) (*userpb.RegisterResponse, error) {
+	return ExecuteWithBreaker(c.breaker, "Register", func() (*userpb.RegisterResponse, error) {
+		return c.authClient.Register(ctx, req)
+	})
+}
+
 // RefreshToken 刷新Token
 func (c *userServiceClientImpl) RefreshToken(ctx context.Context, req *userpb.RefreshTokenRequest) (*userpb.RefreshTokenResponse, error) {
 	return ExecuteWithBreaker(c.breaker, "RefreshToken", func() (*userpb.RefreshTokenResponse, error) {

@@ -25,6 +25,9 @@ type IAuthRepository interface {
 	// Create 创建新用户
 	Create(ctx context.Context, user *model.UserInfo) (*model.UserInfo, error)
 
+	// VerifyVerifyCode 校验验证码
+	VerifyVerifyCode(ctx context.Context, email, verifyCode string) (bool, error)
+
 	// UpdateLastLogin 更新最后登录时间
 	UpdateLastLogin(ctx context.Context, userUUID string) error
 

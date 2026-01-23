@@ -37,8 +37,71 @@ func NewAuthService(
 }
 
 // Register 用户注册
+// 业务流程：
+//  1. 校验验证码
+//  2. 创建用户
+//  3. 返回用户信息
+//
+// 错误码映射：
+//   - codes.Unauthenticated: 验证码错误
+//   - codes.Internal: 系统内部错误
+//   - codes.AlreadyExists: 用户已存在
 func (s *authServiceImpl) Register(ctx context.Context, req *pb.RegisterRequest) (*pb.RegisterResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "注册功能暂未实现")
+	// 记录注册请求
+	logger.Info(ctx, "用户注册请求",
+		logger.String("email", req.Email),
+		logger.String("password", req.Password),
+		logger.String("verify_code", req.VerifyCode),
+		logger.String("nickname", req.Nickname),
+		logger.String("telephone", req.Telephone),
+	)
+	
+	// 1. 校验验证码
+	isValid, err := s.authRepo.VerifyVerifyCode(ctx, req.Email, req.VerifyCode)
+	if err != nil {
+		logger.Error(ctx, "校验验证码失败",
+			logger.ErrorField("error", err),
+		)
+		return nil, status.Error(codes.Internal, strconv.Itoa(consts.CodeInternalError))
+	}
+	if !isValid {
+		return nil, status.Error(codes.Unauthenticated, strconv.Itoa(consts.CodeVerifyCodeError))
+	}
+	
+	// 2. 创建用户
+
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	if err != nil {
+		logger.Error(ctx, "生成密码哈希失败",
+			logger.ErrorField("error", err),
+		)
+		return nil, status.Error(codes.Internal, strconv.Itoa(consts.CodeInternalError))
+	}
+	// 将密码哈希化
+	user := &model.UserInfo{
+		Uuid: util.GenIDString(),
+		Email: req.Email,
+		Password: string(hashedPassword),
+		Nickname: req.Nickname,
+		Telephone: req.Telephone,
+		Status: 0,
+		IsAdmin: 0,
+	}
+	var return_user *model.UserInfo
+	// 向数据库中插入
+	if return_user,err = s.authRepo.Create(ctx, user); err != nil {
+		// 如果是唯一索引冲突错误，返回用户已存在
+		if errors.Is(err, gorm.ErrDuplicatedKey) {
+			return nil, status.Error(codes.AlreadyExists, strconv.Itoa(consts.CodeUserAlreadyExist))
+		}
+		return nil, status.Error(codes.Internal, strconv.Itoa(consts.CodeInternalError))
+	}
+	return &pb.RegisterResponse{
+		UserUuid: return_user.Uuid,
+		Nickname: return_user.Nickname,
+		Email: return_user.Email,
+		Telephone: return_user.Telephone,
+	}, nil
 }
 
 // Login 用户登录（密码）

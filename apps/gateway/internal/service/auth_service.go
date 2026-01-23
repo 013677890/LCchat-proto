@@ -68,5 +68,33 @@ func (s *AuthServiceImpl) Login(ctx context.Context, req *dto.LoginRequest, devi
 // req: 注册请求
 // 返回: 完整的注册响应（包含Token和用户信息）
 func (s *AuthServiceImpl) Register(ctx context.Context, req *dto.RegisterRequest) (*dto.RegisterResponse, error) {
-	return nil, nil
+	startTime := time.Now()
+
+	// 1. 转换 DTO 为 Protobuf 请求
+	grpcReq := dto.ConvertToProtoRegisterRequest(req)
+
+	// 2. 调用用户服务进行注册(gRPC)
+	grpcResp, err := s.userClient.Register(ctx, grpcReq)
+	if err != nil {
+		// gRPC 调用失败，提取业务错误码
+		code := utils.ExtractErrorCode(err)
+		// 记录错误日志
+		logger.Error(ctx, "调用用户服务 gRPC 失败",
+			logger.ErrorField("error", err),
+			logger.Int("business_code", code),
+			logger.String("business_message", consts.GetMessage(code)),
+			logger.Duration("duration", time.Since(startTime)),
+		)
+		// 返回业务错误（作为 Go error 返回，由 Handler 层处理）
+		return nil, err
+	}
+
+	// 3. gRPC 调用成功，检查响应数据
+	if grpcResp.UserUuid == "" {
+		// 成功返回但 UserUuid 为空，属于非预期的异常情况
+		logger.Error(ctx, "gRPC 成功响应但用户信息为空")
+		return nil, errors.New(strconv.Itoa(consts.CodeInternalError))
+	}
+
+	return dto.ConvertRegisterResponseFromProto(grpcResp), nil
 }

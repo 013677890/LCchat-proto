@@ -21,6 +21,9 @@ type UserServiceClient interface {
 	// VerifyCode 校验验证码
 	VerifyCode(ctx context.Context, req *userpb.VerifyCodeRequest) (*userpb.VerifyCodeResponse, error)
 
+	// Register 用户注册
+	Register(ctx context.Context, req *userpb.RegisterRequest) (*userpb.RegisterResponse, error)
+
 	// RefreshToken 刷新Token
 	RefreshToken(ctx context.Context, req *userpb.RefreshTokenRequest) (*userpb.RefreshTokenResponse, error)
 
