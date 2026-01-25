@@ -310,3 +310,87 @@ func (h *AuthHandler) ResetPassword(c *gin.Context) {
 	// 3. 返回成功响应
 	result.Success(c, nil)
 }
+
+// RefreshToken 刷新Token接口
+// @Summary 刷新Token
+// @Description 使用 Refresh Token 刷新 Access Token
+// @Tags 认证接口
+// @Accept json
+// @Produce json
+// @Param request body dto.RefreshTokenRequest true "刷新Token请求"
+// @Success 200 {object} dto.RefreshTokenResponse
+// @Router /api/v1/public/user/refresh-token [post]
+func (h *AuthHandler) RefreshToken(c *gin.Context) {
+	ctx := middleware.NewContextWithGin(c)
+
+	// 1. 绑定请求数据
+	var req dto.RefreshTokenRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		// 参数错误由客户端输入导致,属于正常业务流程,不记录日志
+		result.Fail(c, nil, consts.CodeParamError)
+		return
+	}
+
+	// 2. 调用服务层处理业务逻辑（依赖注入）
+	resp, err := h.authService.RefreshToken(ctx, &req)
+	if err != nil {
+		// 检查是否为业务错误
+		if consts.IsNonServerError(utils.ExtractErrorCode(err)) {
+			// 业务逻辑失败（如Token无效、已过期等）
+			result.Fail(c, nil, utils.ExtractErrorCode(err))
+			return
+		}
+
+		// 其他内部错误
+		logger.Error(ctx, "刷新Token服务内部错误",
+			logger.ErrorField("error", err),
+		)
+		result.Fail(c, nil, consts.CodeInternalError)
+		return
+	}
+
+	// 3. 返回成功响应
+	result.Success(c, resp)
+}
+
+// VerifyCode 校验验证码接口
+// @Summary 校验验证码
+// @Description 校验验证码是否正确（不消耗验证码）
+// @Tags 认证接口
+// @Accept json
+// @Produce json
+// @Param request body dto.VerifyCodeRequest true "校验验证码请求"
+// @Success 200 {object} dto.VerifyCodeResponse
+// @Router /api/v1/public/user/verify-code [post]
+func (h *AuthHandler) VerifyCode(c *gin.Context) {
+	ctx := middleware.NewContextWithGin(c)
+
+	// 1. 绑定请求数据
+	var req dto.VerifyCodeRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		// 参数错误由客户端输入导致,属于正常业务流程,不记录日志
+		result.Fail(c, nil, consts.CodeParamError)
+		return
+	}
+
+	// 2. 调用服务层处理业务逻辑（依赖注入）
+	resp, err := h.authService.VerifyCode(ctx, &req)
+	if err != nil {
+		// 检查是否为业务错误
+		if consts.IsNonServerError(utils.ExtractErrorCode(err)) {
+			// 业务逻辑失败（如验证码错误、已过期等）
+			result.Fail(c, nil, utils.ExtractErrorCode(err))
+			return
+		}
+
+		// 其他内部错误
+		logger.Error(ctx, "校验验证码服务内部错误",
+			logger.ErrorField("error", err),
+		)
+		result.Fail(c, nil, consts.CodeInternalError)
+		return
+	}
+
+	// 3. 返回成功响应
+	result.Success(c, resp)
+}

@@ -45,4 +45,16 @@ type AuthService interface {
 	// req: 重置密码请求
 	// 返回: 重置密码响应
 	ResetPassword(ctx context.Context, req *dto.ResetPasswordRequest) (*dto.ResetPasswordResponse, error)
+
+	// RefreshToken 刷新Token
+	// ctx: 请求上下文
+	// req: 刷新Token请求
+	// 返回: 刷新Token响应
+	RefreshToken(ctx context.Context, req *dto.RefreshTokenRequest) (*dto.RefreshTokenResponse, error)
+
+	// VerifyCode 校验验证码
+	// ctx: 请求上下文
+	// req: 校验验证码请求
+	// 返回: 校验验证码响应
+	VerifyCode(ctx context.Context, req *dto.VerifyCodeRequest) (*dto.VerifyCodeResponse, error)
 }

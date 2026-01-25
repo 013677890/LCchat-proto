@@ -225,3 +225,63 @@ func (s *AuthServiceImpl) ResetPassword(ctx context.Context, req *dto.ResetPassw
 
 	return dto.ConvertResetPasswordResponseFromProto(nil), nil
 }
+
+// RefreshToken 刷新Token
+// ctx: 请求上下文
+// req: 刷新Token请求
+// 返回: 刷新Token响应
+func (s *AuthServiceImpl) RefreshToken(ctx context.Context, req *dto.RefreshTokenRequest) (*dto.RefreshTokenResponse, error) {
+	startTime := time.Now()
+
+	// 1. 转换 DTO 为 Protobuf 请求
+	grpcReq := dto.ConvertToProtoRefreshTokenRequest(req)
+
+	// 2. 调用用户服务进行刷新Token(gRPC)
+	grpcResp, err := s.userClient.RefreshToken(ctx, grpcReq)
+	if err != nil {
+		// gRPC 调用失败，提取业务错误码
+		code := utils.ExtractErrorCode(err)
+		// 记录错误日志
+		logger.Error(ctx, "调用用户服务 gRPC 失败",
+			logger.ErrorField("error", err),
+			logger.Int("business_code", code),
+			logger.String("business_message", consts.GetMessage(code)),
+			logger.Duration("duration", time.Since(startTime)),
+		)
+
+		// 返回业务错误（作为 Go error 返回，由 Handler 层处理）
+		return nil, err
+	}
+
+	return dto.ConvertRefreshTokenResponseFromProto(grpcResp), nil
+}
+
+// VerifyCode 校验验证码
+// ctx: 请求上下文
+// req: 校验验证码请求
+// 返回: 校验验证码响应
+func (s *AuthServiceImpl) VerifyCode(ctx context.Context, req *dto.VerifyCodeRequest) (*dto.VerifyCodeResponse, error) {
+	startTime := time.Now()
+
+	// 1. 转换 DTO 为 Protobuf 请求
+	grpcReq := dto.ConvertToProtoVerifyCodeRequest(req)
+
+	// 2. 调用用户服务进行校验验证码(gRPC)
+	grpcResp, err := s.userClient.VerifyCode(ctx, grpcReq)
+	if err != nil {
+		// gRPC 调用失败，提取业务错误码
+		code := utils.ExtractErrorCode(err)
+		// 记录错误日志
+		logger.Error(ctx, "调用用户服务 gRPC 失败",
+			logger.ErrorField("error", err),
+			logger.Int("business_code", code),
+			logger.String("business_message", consts.GetMessage(code)),
+			logger.Duration("duration", time.Since(startTime)),
+		)
+
+		// 返回业务错误（作为 Go error 返回，由 Handler 层处理）
+		return nil, err
+	}
+
+	return dto.ConvertVerifyCodeResponseFromProto(grpcResp), nil
+}
