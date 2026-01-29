@@ -1,0 +1,88 @@
+package config
+
+import "time"
+
+// MinIOConfig MinIO 对象存储配置
+type MinIOConfig struct {
+	// 连接配置
+	Endpoint        string `json:"endpoint" yaml:"endpoint"`               // MinIO 服务地址，如: localhost:9000
+	AccessKeyID     string `json:"accessKeyId" yaml:"accessKeyId"`         // Access Key
+	SecretAccessKey string `json:"secretAccessKey" yaml:"secretAccessKey"` // Secret Key
+	UseSSL          bool   `json:"useSSL" yaml:"useSSL"`                   // 是否使用 HTTPS
+
+	// Bucket 配置
+	BucketName string `json:"bucketName" yaml:"bucketName"` // 默认存储桶名称
+	Location   string `json:"location" yaml:"location"`     // Bucket 区域，如: us-east-1
+
+	// 上传配置
+	MaxFileSize   int64         `json:"maxFileSize" yaml:"maxFileSize"`     // 最大文件大小（字节），默认 10MB
+	AllowedTypes  []string      `json:"allowedTypes" yaml:"allowedTypes"`   // 允许的文件类型，如: ["image/jpeg", "image/png"]
+	UploadTimeout time.Duration `json:"uploadTimeout" yaml:"uploadTimeout"` // 上传超时时间
+
+	// 访问配置
+	PublicRead bool   `json:"publicRead" yaml:"publicRead"` // 是否公开读取
+	BaseURL    string `json:"baseUrl" yaml:"baseUrl"`       // 外部访问的基础 URL，用于返回给客户端的文件地址
+
+	// 连接池配置
+	MaxIdleConns        int           `json:"maxIdleConns" yaml:"maxIdleConns"`               // 最大空闲连接数
+	MaxIdleConnsPerHost int           `json:"maxIdleConnsPerHost" yaml:"maxIdleConnsPerHost"` // 每个 host 的最大空闲连接数
+	IdleConnTimeout     time.Duration `json:"idleConnTimeout" yaml:"idleConnTimeout"`         // 空闲连接超时时间
+}
+
+// DefaultMinIOConfig 返回本地开发的默认配置
+func DefaultMinIOConfig() MinIOConfig {
+	return MinIOConfig{
+		// 连接配置（与 docker-compose.yml 对齐）
+		Endpoint:        "minio:9000",
+		AccessKeyID:     "minioadmin",
+		SecretAccessKey: "minioadmin",
+		UseSSL:          false,
+
+		// Bucket 配置
+		BucketName: "chatserver",
+		Location:   "us-east-1",
+
+		// 上传配置
+		MaxFileSize:   10 * 1024 * 1024, // 10MB
+		AllowedTypes:  []string{"image/jpeg", "image/jpg", "image/png", "image/gif", "image/webp"},
+		UploadTimeout: 30 * time.Second,
+
+		// 访问配置
+		PublicRead: true,                    // 图片公开访问
+		BaseURL:    "http://localhost:9000", // 本地开发访问地址
+
+		// 连接池配置
+		MaxIdleConns:        100,
+		MaxIdleConnsPerHost: 10,
+		IdleConnTimeout:     90 * time.Second,
+	}
+}
+
+// ProductionMinIOConfig 返回生产环境的配置示例
+func ProductionMinIOConfig() MinIOConfig {
+	return MinIOConfig{
+		// 连接配置（生产环境需要从环境变量或配置中心读取）
+		Endpoint:        "minio.example.com:9000",
+		AccessKeyID:     "",   // 从环境变量读取
+		SecretAccessKey: "",   // 从环境变量读取
+		UseSSL:          true, // 生产环境使用 HTTPS
+
+		// Bucket 配置
+		BucketName: "chatserver-prod",
+		Location:   "us-east-1",
+
+		// 上传配置
+		MaxFileSize:   20 * 1024 * 1024, // 20MB
+		AllowedTypes:  []string{"image/jpeg", "image/jpg", "image/png", "image/gif", "image/webp"},
+		UploadTimeout: 60 * time.Second,
+
+		// 访问配置
+		PublicRead: true,
+		BaseURL:    "https://cdn.example.com", // 使用 CDN 地址
+
+		// 连接池配置
+		MaxIdleConns:        200,
+		MaxIdleConnsPerHost: 20,
+		IdleConnTimeout:     120 * time.Second,
+	}
+}
