@@ -33,7 +33,7 @@ func InitRouter(authHandler *v1.AuthHandler, userHandler *v1.UserHandler) *gin.E
 	// 跨域中间件
 	r.Use(middleware.CorsMiddleware())
 
-	// IP 限流中间件（基于 Redis 令牌桶算法）
+	// ==================== 全局 IP 限流中间件 ====================
 	// 参数说明：
 	//   - blacklistKey: "gateway:blacklist:ips" (黑名单 Redis Set 的 key)
 	//   - rate: 10.0 (每秒10个令牌)
@@ -52,7 +52,6 @@ func InitRouter(authHandler *v1.AuthHandler, userHandler *v1.UserHandler) *gin.E
 	})
 
 	// Prometheus 指标暴露接口
-	// Prometheus 会定时访问这个接口来拉取监控数据
 	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
 
 	// API 路由组
@@ -61,7 +60,6 @@ func InitRouter(authHandler *v1.AuthHandler, userHandler *v1.UserHandler) *gin.E
 		// 公开接口（不需要认证）
 		public := api.Group("/public")
 		{
-			//转发给user服务的接口
 			user := public.Group("/user")
 			{
 				user.POST("/login", authHandler.Login)
@@ -76,20 +74,32 @@ func InitRouter(authHandler *v1.AuthHandler, userHandler *v1.UserHandler) *gin.E
 
 		// 需要认证的接口
 		auth := api.Group("/auth")
-		auth.Use(middleware.JWTAuthMiddleware()) // 应用 JWT 认证中间件  测试环境下不启用
+		auth.Use(middleware.JWTAuthMiddleware()) // JWT 认证中间件（必须在前）
+		
+		// ==================== 用户级别限流中间件 ====================
+		// 只对已认证的用户进行限流
+		// 参数说明：
+		//   - rate: 100.0 (每秒100个令牌，对正常用户比较宽松)
+		//   - burst: 200 (令牌桶容量200)
+		auth.Use(middleware.UserRateLimitMiddleware(100.0, 200))
 		{
-			//转发给user服务的接口
 			user := auth.Group("/user")
 			{
 				user.GET("/profile", userHandler.GetProfile)
 				user.PUT("/profile", userHandler.UpdateProfile)
 				user.GET("/profile/:userUuid", userHandler.GetOtherProfile)
-				user.POST("/change-password", userHandler.ChangePassword)
-				user.POST("/change-email", userHandler.ChangeEmail)
+				
+				// 敏感操作使用更严格的限流
+				user.POST("/change-password",
+					middleware.UserRateLimitMiddlewareWithConfig(2.0, 5),
+					userHandler.ChangePassword)
+				user.POST("/change-email",
+					middleware.UserRateLimitMiddlewareWithConfig(2.0, 5),
+					userHandler.ChangeEmail)
+				
 				user.POST("/logout", authHandler.Logout)
 			}
 		}
-
 	}
 
 	return r

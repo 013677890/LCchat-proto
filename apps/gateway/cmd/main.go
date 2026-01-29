@@ -22,6 +22,9 @@ import (
 
 func main() {
 	ctx := context.Background()
+	//设置trace_id 为 0
+	traceId := "0"
+	ctx = context.WithValue(ctx, "trace_id", traceId)
 
 	// 1. 初始化 Redis
 	redisCfg := config.DefaultRedisConfig()
@@ -56,18 +59,6 @@ func main() {
 	}()
 
 	logger.Info(ctx, "Gateway 服务初始化中...")
-
-	// 2. 初始化用户级别限流器
-	// TODO: 从配置文件读取限流参数
-	// 参数说明：
-	//   - requestsPerSecond: 每个用户每秒允许的请求数（令牌产生速率）
-	//   - burst: 令牌桶容量（允许的突发请求数）
-	// 示例：10 req/s, burst 20 表示正常情况下每秒10个请求，短时间内最多20个
-	middleware.InitUserRateLimiter(10, 20)
-	logger.Info(ctx, "用户限流器初始化完成",
-		logger.Float64("requests_per_second", 10),
-		logger.Int("burst", 20),
-	)
 
 	// 3. 初始化 Redis IP 限流器
 	// 参数说明：

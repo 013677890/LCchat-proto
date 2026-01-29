@@ -88,7 +88,7 @@ func LogRedisError(ctx context.Context, err error) {
 // task: 要重试的 Redis 任务（由调用方构造）
 func LogAndRetryRedisError(ctx context.Context, task mq.RedisTask, err error) {
 	// 1. 记录 Redis 错误日志
-	logger.Error(ctx, "Redis 操作失败，发送到重试队列",
+	logger.Warn(ctx, "Redis 操作失败，发送到重试队列",
 		logger.ErrorField("error", err),
 		logger.String("task_type", string(task.Type)),
 		logger.String("command", task.Command),

@@ -12,7 +12,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
-	"golang.org/x/time/rate"
 )
 
 // ==================== Redis 令牌桶 Lua 脚本 ====================
@@ -240,169 +239,6 @@ func InitRedisRateLimiter(rate float64, burst int, redisClient *redis.Client) {
 	)
 }
 
-// ==================== 原有的内存限流器 (保留向后兼容) ====================
-
-// UserRateLimiter 用户级别的限流器
-// 为每个用户维护独立的令牌桶
-type UserRateLimiter struct {
-	limiters map[string]*rate.Limiter // key: user_uuid, value: 令牌桶
-	mu       *sync.RWMutex
-	r        rate.Limit // 每秒产生的令牌数
-	b        int        // 令牌桶容量
-}
-
-// NewUserRateLimiter 创建用户级别限流器
-// requestsPerSecond: 每秒允许的请求数（令牌产生速率）
-// burst: 令牌桶容量（允许的突发请求数）
-func NewUserRateLimiter(requestsPerSecond float64, burst int) *UserRateLimiter {
-	return &UserRateLimiter{
-		limiters: make(map[string]*rate.Limiter),
-		mu:       &sync.RWMutex{},
-		r:        rate.Limit(requestsPerSecond),
-		b:        burst,
-	}
-}
-
-// GetLimiter 获取指定用户的限流器
-// 如果用户的限流器不存在，则创建一个新的
-func (u *UserRateLimiter) GetLimiter(userUUID string) *rate.Limiter {
-	u.mu.Lock()
-	defer u.mu.Unlock()
-
-	limiter, exists := u.limiters[userUUID]
-	if !exists {
-		// 为新用户创建令牌桶
-		limiter = rate.NewLimiter(u.r, u.b)
-		u.limiters[userUUID] = limiter
-	}
-
-	return limiter
-}
-
-// CleanupInactiveLimiters 清理长时间未使用的限流器
-// 定期调用此方法可以释放内存
-func (u *UserRateLimiter) CleanupInactiveLimiters(inactiveDuration time.Duration) {
-	u.mu.Lock()
-	defer u.mu.Unlock()
-
-	for userUUID, limiter := range u.limiters {
-		// 检查令牌桶是否长时间未使用
-		// 如果令牌桶已满，说明很久没有请求了
-		if limiter.Tokens() >= float64(u.b) {
-			// 简单策略：删除令牌桶已满的用户
-			// 更精确的做法需要记录最后使用时间
-			delete(u.limiters, userUUID)
-		}
-	}
-}
-
-// GetLimiterCount 获取当前限流器数量（用于监控）
-func (u *UserRateLimiter) GetLimiterCount() int {
-	u.mu.RLock()
-	defer u.mu.RUnlock()
-	return len(u.limiters)
-}
-
-// 全局用户限流器实例
-var globalUserLimiter *UserRateLimiter
-
-// InitUserRateLimiter 初始化全局用户限流器
-func InitUserRateLimiter(requestsPerSecond float64, burst int) {
-	globalUserLimiter = NewUserRateLimiter(requestsPerSecond, burst)
-
-	// 启动定期清理协程（每小时清理一次）
-	go func() {
-		ticker := time.NewTicker(1 * time.Hour)
-		defer ticker.Stop()
-
-		for range ticker.C {
-			if globalUserLimiter != nil {
-				globalUserLimiter.CleanupInactiveLimiters(30 * time.Minute)
-			}
-		}
-	}()
-}
-
-// UserRateLimitMiddleware 用户级别限流中间件
-// 必须在 JWT 认证中间件之后使用，因为需要从 context 中获取 user_uuid
-func UserRateLimitMiddleware() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		// 从 context 中获取用户 UUID（由 JWT 中间件设置）
-		userUUID, exists := GetUserUUID(c)
-		if !exists || userUUID == "" {
-			// 如果没有用户信息，说明是公开接口或者认证失败
-			// 这种情况应该已经被前面的中间件拦截了
-			c.JSON(http.StatusUnauthorized, gin.H{
-				"code":    401,
-				"message": "未认证，无法进行限流检查",
-			})
-			c.Abort()
-			return
-		}
-
-		// 获取该用户的限流器
-		limiter := globalUserLimiter.GetLimiter(userUUID)
-
-		// 尝试获取令牌
-		if !limiter.Allow() {
-			// 没有可用令牌，请求被限流
-			logger.Warn(c.Request.Context(), "用户请求被限流",
-				logger.String("user_uuid", userUUID),
-				logger.String("path", c.Request.URL.Path),
-				logger.String("method", c.Request.Method),
-			)
-
-			c.JSON(http.StatusTooManyRequests, gin.H{
-				"code":    429,
-				"message": "请求过于频繁，请稍后再试",
-			})
-			c.Abort()
-			return
-		}
-
-		// 通过限流检查，继续处理请求
-		c.Next()
-	}
-}
-
-// UserRateLimitMiddlewareWithConfig 可配置的用户限流中间件
-// 允许为不同的路由组设置不同的限流参数
-func UserRateLimitMiddlewareWithConfig(requestsPerSecond float64, burst int) gin.HandlerFunc {
-	// 创建独立的限流器实例
-	limiter := NewUserRateLimiter(requestsPerSecond, burst)
-
-	return func(c *gin.Context) {
-		userUUID, exists := GetUserUUID(c)
-		if !exists || userUUID == "" {
-			c.JSON(http.StatusUnauthorized, gin.H{
-				"code":    401,
-				"message": "未认证，无法进行限流检查",
-			})
-			c.Abort()
-			return
-		}
-
-		userLimiter := limiter.GetLimiter(userUUID)
-
-		if !userLimiter.Allow() {
-			logger.Warn(c.Request.Context(), "用户请求被限流",
-				logger.String("user_uuid", userUUID),
-				logger.String("path", c.Request.URL.Path),
-				logger.String("method", c.Request.Method),
-			)
-
-			c.JSON(http.StatusTooManyRequests, gin.H{
-				"code":    429,
-				"message": "请求过于频繁，请稍后再试",
-			})
-			c.Abort()
-			return
-		}
-
-		c.Next()
-	}
-}
-
 // ==================== Redis IP 限流中间件 ====================
 
 // IPRateLimitMiddleware 基于 Redis 的 IP 级别限流中间件
@@ -495,6 +331,152 @@ func IPRateLimitMiddleware(blacklistKey string, rate float64, burst int) gin.Han
 		c.Next()
 	}
 }
+
+// ==================== 用户限流中间件 ====================
+
+// UserRateLimitMiddleware 基于用户 UUID 的限流中间件
+// 用于对已认证用户进行限流，需要在 JWT 认证中间件之后使用
+// 参数：
+//   - rate: 每秒产生的令牌数
+//   - burst: 令牌桶容量
+//
+// 使用示例：
+//
+//	// 在路由中使用（需要在 JWTAuthMiddleware 之后）
+//	api.Use(JWTAuthMiddleware())
+//	api.Use(UserRateLimitMiddleware(100, 200))
+func UserRateLimitMiddleware(rate float64, burst int) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		ctx := c.Request.Context()
+
+		// 1. 获取用户 UUID
+		userUUID, exists := GetUserUUID(c)
+		if !exists || userUUID == "" {
+			// 无法获取用户 UUID，可能是未认证请求，放行
+			// 注意：这个中间件应该在 JWTAuthMiddleware 之后使用
+			logger.Warn(ctx, "无法获取用户 UUID，跳过用户限流检查",
+				logger.String("path", c.Request.URL.Path),
+			)
+			c.Next()
+			return
+		}
+
+		// 2. 检查全局限流器是否初始化
+		if globalRedisLimiter == nil {
+			// 限流器未初始化，放行请求
+			logger.Warn(ctx, "Redis 限流器未初始化，跳过用户限流检查",
+				logger.String("user_uuid", userUUID),
+				logger.String("path", c.Request.URL.Path),
+			)
+			c.Next()
+			return
+		}
+
+		// 3. 构造用户限流 key: gateway:rate:limit:user:{user_uuid}
+		rateLimitKey := fmt.Sprintf("gateway:rate:limit:user:%s", userUUID)
+
+		// 4. 检查是否允许通过
+		allowed, err := globalRedisLimiter.Allow(ctx, rateLimitKey)
+		if err != nil {
+			// Redis 错误，已经降级放行了（返回 true）
+			logger.Warn(ctx, "Redis 用户限流检查异常，降级放行",
+				logger.String("user_uuid", userUUID),
+				logger.String("path", c.Request.URL.Path),
+				logger.ErrorField("error", err),
+			)
+		} else if !allowed {
+			// 用户被限流
+			logger.Warn(ctx, "用户请求被限流",
+				logger.String("user_uuid", userUUID),
+				logger.String("path", c.Request.URL.Path),
+				logger.String("method", c.Request.Method),
+			)
+
+			c.JSON(http.StatusTooManyRequests, gin.H{
+				"code":    429,
+				"message": "请求过于频繁，请稍后再试",
+			})
+			c.Abort()
+			return
+		}
+
+		// 5. 通过检查，继续处理请求
+		c.Next()
+	}
+}
+
+// UserRateLimitMiddlewareWithConfig 可配置的用户限流中间件
+// 允许为不同的路由组设置不同的限流参数
+// 参数：
+//   - rate: 每秒产生的令牌数
+//   - burst: 令牌桶容量
+//
+// 使用示例：
+//
+//	// 为敏感接口设置更严格的限流
+//	api.POST("/sensitive", UserRateLimitMiddlewareWithConfig(10, 20), handler)
+func UserRateLimitMiddlewareWithConfig(rate float64, burst int) gin.HandlerFunc {
+	// 创建独立的限流器实例
+	limiter := NewRedisRateLimiter(rate, burst)
+
+	// 使用 sync.Once 懒加载 Redis Client（只执行一次，避免每次请求都加锁）
+	var once sync.Once
+
+	return func(c *gin.Context) {
+		ctx := c.Request.Context()
+
+		// 懒加载 Redis Client，只执行一次
+		once.Do(func() {
+			if client := pkgredis.Client(); client != nil {
+				limiter.RedisSetClient(client)
+			}
+		})
+
+		// 1. 获取用户 UUID
+		userUUID, exists := GetUserUUID(c)
+		if !exists || userUUID == "" {
+			// 无法获取用户 UUID，可能是未认证请求，放行
+			logger.Warn(ctx, "无法获取用户 UUID，跳过用户限流检查",
+				logger.String("path", c.Request.URL.Path),
+			)
+			c.Next()
+			return
+		}
+
+		// 2. 构造用户限流 key: gateway:rate:limit:user:{user_uuid}
+		rateLimitKey := fmt.Sprintf("gateway:rate:limit:user:%s", userUUID)
+
+		// 3. 检查是否允许通过
+		allowed, err := limiter.Allow(ctx, rateLimitKey)
+		if err != nil {
+			// Redis 错误，已经降级放行了（返回 true）
+			logger.Warn(ctx, "Redis 用户限流检查异常，降级放行",
+				logger.String("user_uuid", userUUID),
+				logger.String("path", c.Request.URL.Path),
+				logger.ErrorField("error", err),
+			)
+		} else if !allowed {
+			// 用户被限流
+			logger.Warn(ctx, "用户请求被限流",
+				logger.String("user_uuid", userUUID),
+				logger.String("path", c.Request.URL.Path),
+				logger.String("method", c.Request.Method),
+			)
+
+			c.JSON(http.StatusTooManyRequests, gin.H{
+				"code":    429,
+				"message": "请求过于频繁，请稍后再试",
+			})
+			c.Abort()
+			return
+		}
+
+		// 4. 通过检查，继续处理请求
+		c.Next()
+	}
+}
+
+// ==================== IP 限流中间件（可配置） ====================
 
 // IPRateLimitMiddlewareWithConfig 可配置的 Redis IP 限流中间件
 // 允许为不同的路由组设置不同的限流参数
