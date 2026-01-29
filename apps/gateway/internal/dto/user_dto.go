@@ -289,7 +289,6 @@ func ConvertGetQRCodeResponseFromProto(pb *userpb.GetQRCodeResponse) *GetQRCodeR
 	}
 	return &GetQRCodeResponse{
 		QRCode:      pb.Qrcode,
-		QRCodeImage: pb.QrcodeImage,
 		ExpireAt:    pb.ExpireAt,
 	}
 }

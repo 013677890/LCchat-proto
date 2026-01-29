@@ -7,8 +7,10 @@ import (
 	pb "ChatServer/apps/user/pb"
 	"ChatServer/consts"
 	"ChatServer/pkg/logger"
+	"ChatServer/pkg/util"
 	"context"
 	"errors"
+	"fmt"
 	"regexp"
 	"strconv"
 	"time"
@@ -451,8 +453,76 @@ func (s *userServiceImpl) ChangeTelephone(ctx context.Context, req *pb.ChangeTel
 }
 
 // GetQRCode 获取用户二维码
+// 业务流程：
+//  1. 从context中获取用户UUID
+//  2. 使用雪花算法生成唯一的二维码 token
+//  3. 在 Redis 中保存 token -> userUUID 和 userUUID -> token 的映射关系（48小时过期）
+//  4. 构造二维码 URL，格式为: https://LCchat.top/api/v1/auth/user/parse-qrcode/{token}
+//  5. 计算过期时间（当前时间 + 48小时）
+//  6. 返回二维码 URL 和过期时间
+//
+// 错误码映射：
+//   - codes.Unauthenticated: 未认证
+//   - codes.Internal: 系统内部错误
 func (s *userServiceImpl) GetQRCode(ctx context.Context, req *pb.GetQRCodeRequest) (*pb.GetQRCodeResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "获取用户二维码功能暂未实现")
+	// 1. 从context中获取用户UUID
+	userUUID, ok := ctx.Value("user_uuid").(string)
+	if !ok || userUUID == "" {
+		logger.Error(ctx, "获取用户UUID失败")
+		return nil, status.Error(codes.Unauthenticated, strconv.Itoa(consts.CodeUnauthorized))
+	}
+
+	// 2. 如果已有二维码 token，则直接返回
+	token, expireTime, err := s.userRepo.GetQRCodeTokenByUserUUID(ctx, userUUID)
+	if err == nil {
+		logger.Info(ctx, "用户已有二维码 token",
+			logger.String("user_uuid", userUUID),
+			logger.String("qrcode_url", fmt.Sprintf("https://LCchat.top/api/v1/auth/user/parse-qrcode/%s", token)),
+		)
+		return &pb.GetQRCodeResponse{
+			Qrcode:   fmt.Sprintf("https://LCchat.top/api/v1/auth/user/parse-qrcode/%s", token),
+			ExpireAt: expireTime.Format(time.RFC3339),
+		}, nil
+	}else if errors.Is(err, repository.ErrRedisNil) {
+	}else {
+		logger.Error(ctx, "获取用户二维码 token失败",
+			logger.String("user_uuid", userUUID),
+			logger.ErrorField("error", err),
+		)
+		return nil, status.Error(codes.Internal, strconv.Itoa(consts.CodeInternalError))
+	}
+
+	// 3. 使用雪花算法生成唯一的二维码 token
+	token = util.GenIDString()
+
+	// 3. 在 Redis 中保存 token -> userUUID 和 userUUID -> token 的映射关系
+	err = s.userRepo.SaveQRCode(ctx, userUUID, token)
+	if err != nil {
+		logger.Error(ctx, "保存二维码到Redis失败",
+			logger.String("user_uuid", userUUID),
+			logger.String("token", token),
+			logger.ErrorField("error", err),
+		)
+		return nil, status.Error(codes.Internal, strconv.Itoa(consts.CodeInternalError))
+	}
+
+	// 4. 构造二维码 URL
+	qrcodeURL := fmt.Sprintf("https://LCchat.top/api/v1/auth/user/parse-qrcode/%s", token)
+
+	// 5. 计算过期时间（当前时间 + 48小时）
+	expireAt := time.Now().Add(48 * time.Hour).Format(time.RFC3339)
+
+	logger.Info(ctx, "生成用户二维码成功",
+		logger.String("user_uuid", userUUID),
+		logger.String("token", token),
+		logger.String("qrcode_url", qrcodeURL),
+	)
+
+	// 6. 返回二维码 URL 和过期时间
+	return &pb.GetQRCodeResponse{
+		Qrcode:   qrcodeURL,
+		ExpireAt: expireAt,
+	}, nil
 }
 
 // ParseQRCode 解析二维码

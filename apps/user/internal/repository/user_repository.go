@@ -264,3 +264,53 @@ func (r *userRepositoryImpl) UpdatePassword(ctx context.Context, userUUID, passw
 
 	return nil
 }
+
+// SaveQRCode 保存用户二维码
+// 将二维码 token 与用户 UUID 的映射关系存储到 Redis
+// 同时保存反向映射: user:qrcode:user:{userUUID} -> token
+// 过期时间: 48小时
+func (r *userRepositoryImpl) SaveQRCode(ctx context.Context, userUUID, token string) error {
+	// 1. 保存 token -> userUUID 映射
+	tokenKey := fmt.Sprintf("user:qrcode:token:%s", token)
+	err := r.redisClient.Set(ctx, tokenKey, userUUID, 48*time.Hour).Err()
+	if err != nil {
+		return WrapRedisError(err)
+	}
+
+	// 2. 保存 userUUID -> token 反向映射
+	userKey := fmt.Sprintf("user:qrcode:user:%s", userUUID)
+	err = r.redisClient.Set(ctx, userKey, token, 48*time.Hour).Err()
+	if err != nil {
+		return WrapRedisError(err)
+	}
+
+	return nil
+}
+
+// GetUUIDByQRCodeToken 根据 token 获取用户 UUID
+func (r *userRepositoryImpl) GetUUIDByQRCodeToken(ctx context.Context, token string) (string, error) {
+	tokenKey := fmt.Sprintf("user:qrcode:token:%s", token)
+	userUUID, err := r.redisClient.Get(ctx, tokenKey).Result()
+	if err != nil {
+		if err == redis.Nil {
+			return "", ErrRedisNil
+		}
+		return "", WrapRedisError(err)
+	}
+	return userUUID, nil
+}
+
+// GetQRCodeTokenByUserUUID 根据用户 UUID 获取二维码 token和剩余时间
+func (r *userRepositoryImpl) GetQRCodeTokenByUserUUID(ctx context.Context, userUUID string) (string,time.Time, error) {
+	userKey := fmt.Sprintf("user:qrcode:user:%s", userUUID)
+	pipe := r.redisClient.Pipeline()
+	pipe.Get(ctx, userKey)
+	pipe.TTL(ctx, userKey)
+	cmds, err := pipe.Exec(ctx)
+	if err != nil {
+		return "", time.Time{}, WrapRedisError(err)
+	}
+	token := cmds[0].(*redis.StringCmd).Val()
+	expireTime := time.Now().Add(cmds[1].(*redis.DurationCmd).Val().Round(time.Second))
+	return token, expireTime, nil
+}

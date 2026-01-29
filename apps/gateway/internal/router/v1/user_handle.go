@@ -420,3 +420,36 @@ func (h *UserHandler) BatchGetProfile(c *gin.Context) {
 	// 4. 返回成功响应
 	result.Success(c, batchResp)
 }
+
+// GetQRCode 获取用户二维码接口
+// @Summary 获取用户二维码
+// @Description 生成用户二维码（用于加好友）
+// @Tags 用户信息接口
+// @Accept json
+// @Produce json
+// @Success 200 {object} dto.GetQRCodeResponse
+// @Router /api/v1/user/qrcode [get]
+func (h *UserHandler) GetQRCode(c *gin.Context) {
+	ctx := middleware.NewContextWithGin(c)
+
+	// 1. 调用服务层处理业务逻辑（依赖注入）
+	qrcodeResp, err := h.userService.GetQRCode(ctx)
+	if err != nil {
+		// 检查是否为业务错误
+		if consts.IsNonServerError(utils.ExtractErrorCode(err)) {
+			// 业务逻辑失败
+			result.Fail(c, nil, utils.ExtractErrorCode(err))
+			return
+		}
+
+		// 其他内部错误
+		logger.Error(ctx, "获取用户二维码服务内部错误",
+			logger.ErrorField("error", err),
+		)
+		result.Fail(c, nil, consts.CodeInternalError)
+		return
+	}
+
+	// 2. 返回成功响应
+	result.Success(c, qrcodeResp)
+}

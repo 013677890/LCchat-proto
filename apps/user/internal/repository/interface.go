@@ -90,6 +90,18 @@ type IUserRepository interface {
 
 	// UpdatePassword 更新密码
 	UpdatePassword(ctx context.Context, userUUID, password string) error
+
+	// SaveQRCode 保存用户二维码
+	// 将二维码 token 与用户 UUID 的映射关系存储到 Redis
+	// 同时保存反向映射: user:qrcode:user:{userUUID} -> token
+	// 过期时间: 48小时
+	SaveQRCode(ctx context.Context, userUUID, token string) error
+
+	// GetUUIDByQRCodeToken 根据 token 获取用户 UUID
+	GetUUIDByQRCodeToken(ctx context.Context, token string) (string, error)
+
+	// GetQRCodeTokenByUserUUID 根据用户 UUID 获取二维码 token
+	GetQRCodeTokenByUserUUID(ctx context.Context, userUUID string) (string, time.Time, error)
 }
 
 // ==================== 好友关系 Repository ====================
