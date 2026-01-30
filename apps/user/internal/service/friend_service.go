@@ -5,19 +5,23 @@ import (
 	"ChatServer/apps/user/internal/utils"
 	pb "ChatServer/apps/user/pb"
 	"ChatServer/consts"
+	"ChatServer/model"
 	"ChatServer/pkg/logger"
 	"context"
+	"errors"
 	"strconv"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"gorm.io/gorm"
 )
 
 // friendServiceImpl 好友关系服务实现
 type friendServiceImpl struct {
-	friendRepo repository.IFriendRepository
-	applyRepo  repository.IApplyRepository
-	userRepo   repository.IUserRepository
+	friendRepo    repository.IFriendRepository
+	applyRepo     repository.IApplyRepository
+	userRepo      repository.IUserRepository
+	blacklistRepo repository.IBlacklistRepository
 }
 
 // NewFriendService 创建好友服务实例
@@ -25,11 +29,13 @@ func NewFriendService(
 	friendRepo repository.IFriendRepository,
 	applyRepo repository.IApplyRepository,
 	userRepo repository.IUserRepository,
+	blacklistRepo repository.IBlacklistRepository,
 ) FriendService {
 	return &friendServiceImpl{
-		friendRepo: friendRepo,
-		applyRepo:  applyRepo,
-		userRepo:   userRepo,
+		friendRepo:    friendRepo,
+		applyRepo:     applyRepo,
+		userRepo:      userRepo,
+		blacklistRepo: blacklistRepo,
 	}
 }
 
@@ -136,8 +142,165 @@ func (s *friendServiceImpl) SearchUser(ctx context.Context, req *pb.SearchUserRe
 }
 
 // SendFriendApply 发送好友申请
+// 业务流程：
+//  1. 从context中获取当前用户UUID（申请人）
+//  2. 检查目标用户是否存在
+//  3. 检查不能添加自己为好友
+//  4. 检查是否已经是好友
+//  5. 检查是否存在待处理的申请
+//  6. 检查对方是否已将你拉黑
+//  7. 检查你是否已将对方拉黑
+//  8. 创建好友申请记录
+//  9. 返回申请ID
+//
+// 错误码映射：
+//   - codes.InvalidArgument: 不能添加自己为好友
+//   - codes.NotFound: 用户不存在
+//   - codes.AlreadyExists: 已经是好友、申请已发送
+//   - codes.FailedPrecondition: 对方已将你拉黑、你已将对方拉黑
+//   - codes.Internal: 系统内部错误
 func (s *friendServiceImpl) SendFriendApply(ctx context.Context, req *pb.SendFriendApplyRequest) (*pb.SendFriendApplyResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "发送好友申请功能暂未实现")
+	// 1. 从context中获取当前用户UUID（申请人）
+	currentUserUUID, ok := ctx.Value("user_uuid").(string)
+	if !ok || currentUserUUID == "" {
+		logger.Error(ctx, "获取用户UUID失败")
+		return nil, status.Error(codes.Unauthenticated, strconv.Itoa(consts.CodeUnauthorized))
+	}
+
+	// 2. 检查目标用户是否存在
+	_, err := s.userRepo.GetByUUID(ctx, req.TargetUuid)
+	if err != nil {
+		// 检查是否是用户不存在的错误
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			logger.Warn(ctx, "目标用户不存在",
+				logger.String("target_uuid", req.TargetUuid),
+			)
+			return nil, status.Error(codes.NotFound, strconv.Itoa(consts.CodeUserNotFound))
+		}
+		logger.Error(ctx, "查询目标用户失败",
+			logger.String("target_uuid", req.TargetUuid),
+			logger.ErrorField("error", err),
+		)
+		return nil, status.Error(codes.Internal, strconv.Itoa(consts.CodeInternalError))
+	}
+
+	// 3. 检查不能添加自己为好友
+	if currentUserUUID == req.TargetUuid {
+		logger.Warn(ctx, "不能添加自己为好友",
+			logger.String("user_uuid", currentUserUUID),
+		)
+		return nil, status.Error(codes.InvalidArgument, strconv.Itoa(consts.CodeCannotAddSelf))
+	}
+
+	// 4. 检查是否已经是好友
+	isFriend, err := s.friendRepo.IsFriend(ctx, currentUserUUID, req.TargetUuid)
+	if err != nil {
+		logger.Error(ctx, "检查是否好友失败",
+			logger.String("user_uuid", currentUserUUID),
+			logger.String("target_uuid", req.TargetUuid),
+			logger.ErrorField("error", err),
+		)
+		return nil, status.Error(codes.Internal, strconv.Itoa(consts.CodeInternalError))
+	}
+
+	if isFriend {
+		logger.Info(ctx, "已经是好友",
+			logger.String("user_uuid", currentUserUUID),
+			logger.String("target_uuid", req.TargetUuid),
+		)
+		return nil, status.Error(codes.AlreadyExists, strconv.Itoa(consts.CodeAlreadyFriend))
+	}
+
+	// 5. 检查是否存在待处理的申请
+	exists, err := s.applyRepo.ExistsPendingRequest(ctx, currentUserUUID, req.TargetUuid)
+	if err != nil {
+		logger.Error(ctx, "检查待处理申请失败",
+			logger.String("user_uuid", currentUserUUID),
+			logger.String("target_uuid", req.TargetUuid),
+			logger.ErrorField("error", err),
+		)
+		return nil, status.Error(codes.Internal, strconv.Itoa(consts.CodeInternalError))
+	}
+
+	if exists {
+		logger.Info(ctx, "好友申请已发送",
+			logger.String("user_uuid", currentUserUUID),
+			logger.String("target_uuid", req.TargetUuid),
+		)
+		return nil, status.Error(codes.AlreadyExists, strconv.Itoa(consts.CodeFriendRequestSent))
+	}
+
+	// 6. 检查对方是否已将你拉黑
+	isBlockedByTarget, err := s.blacklistRepo.IsBlocked(ctx, req.TargetUuid, currentUserUUID)
+	if err != nil {
+		logger.Error(ctx, "检查是否被拉黑失败",
+			logger.String("user_uuid", currentUserUUID),
+			logger.String("target_uuid", req.TargetUuid),
+			logger.ErrorField("error", err),
+		)
+		return nil, status.Error(codes.Internal, strconv.Itoa(consts.CodeInternalError))
+	}
+
+	if isBlockedByTarget {
+		logger.Info(ctx, "对方已将你拉黑",
+			logger.String("user_uuid", currentUserUUID),
+			logger.String("target_uuid", req.TargetUuid),
+		)
+		return nil, status.Error(codes.FailedPrecondition, strconv.Itoa(consts.CodePeerBlacklistYou))
+	}
+
+	// 7. 检查你是否已将对方拉黑
+	isBlocked, err := s.blacklistRepo.IsBlocked(ctx, currentUserUUID, req.TargetUuid)
+	if err != nil {
+		logger.Error(ctx, "检查拉黑状态失败",
+			logger.String("user_uuid", currentUserUUID),
+			logger.String("target_uuid", req.TargetUuid),
+			logger.ErrorField("error", err),
+		)
+		return nil, status.Error(codes.Internal, strconv.Itoa(consts.CodeInternalError))
+	}
+
+	if isBlocked {
+		logger.Info(ctx, "你已将对方拉黑",
+			logger.String("user_uuid", currentUserUUID),
+			logger.String("target_uuid", req.TargetUuid),
+		)
+		return nil, status.Error(codes.FailedPrecondition, strconv.Itoa(consts.CodeYouBlacklistPeer))
+	}
+
+	// 8. 创建好友申请记录
+	apply := &model.ApplyRequest{
+		ApplyType:     0, // 0=好友申请
+		ApplicantUuid: currentUserUUID,
+		TargetUuid:    req.TargetUuid,
+		Status:        0, // 0=待处理
+		IsRead:        false,
+		Reason:        req.Reason,
+		// Source字段不在模型中，暂时不设置
+	}
+
+	createdApply, err := s.applyRepo.Create(ctx, apply)
+	if err != nil {
+		logger.Error(ctx, "创建好友申请失败",
+			logger.String("user_uuid", currentUserUUID),
+			logger.String("target_uuid", req.TargetUuid),
+			logger.ErrorField("error", err),
+		)
+		return nil, status.Error(codes.Internal, strconv.Itoa(consts.CodeInternalError))
+	}
+
+	logger.Info(ctx, "发送好友申请成功",
+		logger.String("user_uuid", currentUserUUID),
+		logger.String("target_uuid", req.TargetUuid),
+		logger.Int64("apply_id", createdApply.Id),
+		logger.String("reason", req.Reason),
+		logger.String("source", req.Source),
+	)
+
+	// 9. 返回申请ID
+	return &pb.SendFriendApplyResponse{
+		ApplyId: createdApply.Id,
+	}, nil
 }
 
 // GetFriendApplyList 获取好友申请列表

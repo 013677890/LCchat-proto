@@ -58,3 +58,77 @@ type AuthService interface {
 	// 返回: 校验验证码响应
 	VerifyCode(ctx context.Context, req *dto.VerifyCodeRequest) (*dto.VerifyCodeResponse, error)
 }
+
+// FriendService 好友服务接口
+// 职责：
+//   - 调用下游用户服务进行好友相关操作
+type FriendService interface {
+	// SearchUserByKeywordAndPageAndSize 搜索用户
+	SearchUserByKeywordAndPageAndSize(ctx context.Context, req *dto.SearchUserRequest) (*dto.SearchUserResponse, error)
+
+	// SendFriendApply 发送好友申请
+	SendFriendApply(ctx context.Context, req *dto.SendFriendApplyRequest) (*dto.SendFriendApplyResponse, error)
+
+	// GetFriendApplyList 获取好友申请列表
+	GetFriendApplyList(ctx context.Context, req *dto.GetFriendApplyListRequest) (*dto.GetFriendApplyListResponse, error)
+
+	// GetSentApplyList 获取发出的申请列表
+	GetSentApplyList(ctx context.Context, req *dto.GetSentApplyListRequest) (*dto.GetSentApplyListResponse, error)
+
+	// HandleFriendApply 处理好友申请
+	HandleFriendApply(ctx context.Context, req *dto.HandleFriendApplyRequest) (*dto.HandleFriendApplyResponse, error)
+
+	// GetUnreadApplyCount 获取未读申请数量
+	GetUnreadApplyCount(ctx context.Context, req *dto.GetUnreadApplyCountRequest) (*dto.GetUnreadApplyCountResponse, error)
+
+	// MarkApplyAsRead 标记申请已读
+	MarkApplyAsRead(ctx context.Context, req *dto.MarkApplyAsReadRequest) (*dto.MarkApplyAsReadResponse, error)
+
+	// GetFriendList 获取好友列表
+	GetFriendList(ctx context.Context, req *dto.GetFriendListRequest) (*dto.GetFriendListResponse, error)
+
+	// SyncFriendList 好友增量同步
+	SyncFriendList(ctx context.Context, req *dto.SyncFriendListRequest) (*dto.SyncFriendListResponse, error)
+
+	// DeleteFriend 删除好友
+	DeleteFriend(ctx context.Context, req *dto.DeleteFriendRequest) (*dto.DeleteFriendResponse, error)
+
+	// SetFriendRemark 设置好友备注
+	SetFriendRemark(ctx context.Context, req *dto.SetFriendRemarkRequest) (*dto.SetFriendRemarkResponse, error)
+
+	// SetFriendTag 设置好友标签
+	SetFriendTag(ctx context.Context, req *dto.SetFriendTagRequest) (*dto.SetFriendTagResponse, error)
+
+	// GetTagList 获取标签列表
+	GetTagList(ctx context.Context, req *dto.GetTagListRequest) (*dto.GetTagListResponse, error)
+
+	// CheckIsFriend 判断是否好友
+	CheckIsFriend(ctx context.Context, req *dto.CheckIsFriendRequest) (*dto.CheckIsFriendResponse, error)
+
+	// GetRelationStatus 获取关系状态
+	GetRelationStatus(ctx context.Context, req *dto.GetRelationStatusRequest) (*dto.GetRelationStatusResponse, error)
+}
+
+// UserService 用户服务接口
+type UserService interface {
+	// GetProfile 获取个人信息
+	GetProfile(ctx context.Context) (*dto.GetProfileResponse, error)
+	// GetOtherProfile 获取他人信息
+	GetOtherProfile(ctx context.Context, req *dto.GetOtherProfileRequest) (*dto.GetOtherProfileResponse, error)
+	// UpdateProfile 更新基本信息
+	UpdateProfile(ctx context.Context, req *dto.UpdateProfileRequest) (*dto.UpdateProfileResponse, error)
+	// UploadAvatar 上传头像
+	UploadAvatar(ctx context.Context, avatarURL string) (string, error)
+	// ChangePassword 修改密码
+	ChangePassword(ctx context.Context, req *dto.ChangePasswordRequest) error
+	// ChangeEmail 绑定/换绑邮箱
+	ChangeEmail(ctx context.Context, req *dto.ChangeEmailRequest) (*dto.ChangeEmailResponse, error)
+	// GetQRCode 获取用户二维码
+	GetQRCode(ctx context.Context) (*dto.GetQRCodeResponse, error)
+	// ParseQRCode 解析二维码
+	ParseQRCode(ctx context.Context, req *dto.ParseQRCodeRequest) (*dto.ParseQRCodeResponse, error)
+	// BatchGetProfile 批量获取用户信息
+	BatchGetProfile(ctx context.Context, req *dto.BatchGetProfileRequest) (*dto.BatchGetProfileResponse, error)
+	// DeleteAccount 注销账号
+	DeleteAccount(ctx context.Context, req *dto.DeleteAccountRequest) (*dto.DeleteAccountResponse, error)
+}

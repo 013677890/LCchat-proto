@@ -13,32 +13,6 @@ import (
 	"time"
 )
 
-// UserService 用户服务接口
-type UserService interface {
-	// GetProfile 获取个人信息
-	GetProfile(ctx context.Context) (*dto.GetProfileResponse, error)
-	// GetOtherProfile 获取他人信息
-	GetOtherProfile(ctx context.Context, req *dto.GetOtherProfileRequest) (*dto.GetOtherProfileResponse, error)
-	// UpdateProfile 更新基本信息
-	UpdateProfile(ctx context.Context, req *dto.UpdateProfileRequest) (*dto.UpdateProfileResponse, error)
-	// UploadAvatar 上传头像
-	UploadAvatar(ctx context.Context, avatarURL string) (string, error)
-	// ChangePassword 修改密码
-	ChangePassword(ctx context.Context, req *dto.ChangePasswordRequest) error
-	// ChangeEmail 绑定/换绑邮箱
-	ChangeEmail(ctx context.Context, req *dto.ChangeEmailRequest) (*dto.ChangeEmailResponse, error)
-	// GetQRCode 获取用户二维码
-	GetQRCode(ctx context.Context) (*dto.GetQRCodeResponse, error)
-	// ParseQRCode 解析二维码
-	ParseQRCode(ctx context.Context, req *dto.ParseQRCodeRequest) (*dto.ParseQRCodeResponse, error)
-	// BatchGetProfile 批量获取用户信息
-	BatchGetProfile(ctx context.Context, req *dto.BatchGetProfileRequest) (*dto.BatchGetProfileResponse, error)
-	// DeleteAccount 注销账号
-	DeleteAccount(ctx context.Context, req *dto.DeleteAccountRequest) (*dto.DeleteAccountResponse, error)
-	// SearchUser 搜索用户
-	SearchUser(ctx context.Context, req *dto.SearchUserRequest) (*dto.SearchUserResponse, error)
-}
-
 // UserServiceImpl 用户服务实现
 type UserServiceImpl struct {
 	userClient pb.UserServiceClient
@@ -433,40 +407,4 @@ func (s *UserServiceImpl) DeleteAccount(ctx context.Context, req *dto.DeleteAcco
 	}
 
 	return dto.ConvertDeleteAccountResponseFromProto(grpcResp), nil
-}
-
-// SearchUser 搜索用户
-// ctx: 请求上下文
-// req: 搜索用户请求
-// 返回: 搜索用户响应
-func (s *UserServiceImpl) SearchUser(ctx context.Context, req *dto.SearchUserRequest) (*dto.SearchUserResponse, error) {
-	startTime := time.Now()
-
-	// 1. 转换 DTO 为 Protobuf 请求
-	grpcReq := dto.ConvertToProtoSearchUserRequest(req)
-
-	// 2. 调用好友服务搜索用户(gRPC)
-	grpcResp, err := s.userClient.SearchUser(ctx, grpcReq)
-	if err != nil {
-		// gRPC 调用失败，提取业务错误码
-		code := utils.ExtractErrorCode(err)
-		// 记录错误日志
-		logger.Error(ctx, "调用好友服务 gRPC 失败",
-			logger.ErrorField("error", err),
-			logger.Int("business_code", code),
-			logger.String("business_message", consts.GetMessage(code)),
-			logger.Duration("duration", time.Since(startTime)),
-		)
-		// 返回业务错误（作为 Go error 返回，由 Handler 层处理）
-		return nil, err
-	}
-
-	logger.Info(ctx, "搜索用户成功",
-		logger.String("keyword", req.Keyword),
-		logger.Int32("page", req.Page),
-		logger.Int32("page_size", req.PageSize),
-		logger.Duration("duration", time.Since(startTime)),
-	)
-
-	return dto.ConvertSearchUserResponseFromProto(grpcResp), nil
 }

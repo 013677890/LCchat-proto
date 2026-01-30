@@ -1,8 +1,12 @@
 package repository
 
 import (
+	"ChatServer/apps/user/mq"
 	"ChatServer/model"
 	"context"
+	"errors"
+	"fmt"
+	"time"
 
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
@@ -10,7 +14,7 @@ import (
 
 // blacklistRepositoryImpl 黑名单数据访问层实现
 type blacklistRepositoryImpl struct {
-	db *gorm.DB
+	db          *gorm.DB
 	redisClient *redis.Client
 }
 
@@ -35,8 +39,101 @@ func (r *blacklistRepositoryImpl) GetBlacklistList(ctx context.Context, userUUID
 }
 
 // IsBlocked 检查是否被拉黑
+// 检查 userUUID 是否拉黑了 targetUUID
+// 采用 Cache-Aside Pattern：优先查 Redis Set，未命中则回源 MySQL 并缓存
 func (r *blacklistRepositoryImpl) IsBlocked(ctx context.Context, userUUID, targetUUID string) (bool, error) {
-	return false, nil // TODO: 检查是否被拉黑
+	cacheKey := fmt.Sprintf("user:relation:blacklist:%s", userUUID)
+
+	// ==================== 1. 组合查询 Redis (Pipeline) ====================
+	// 使用 Pipeline 一次性发送命令，减少网络 RTT
+	pipe := r.redisClient.Pipeline()
+
+	// 命令1: 检查 Key 是否存在 (区分缓存命中/未命中)
+	existsCmd := pipe.Exists(ctx, cacheKey)
+	// 命令2: 检查是否已拉黑 (只有 Key 存在时此结果才有效)
+	isMemberCmd := pipe.SIsMember(ctx, cacheKey, targetUUID)
+
+	// 概率续期优化：1% 的概率在读取时顺便续期
+	// 无论 Key 是否存在，Expire 都是安全的 (不存在则返回0)
+	if getRandomBool(0.01) {
+		pipe.Expire(ctx, cacheKey, getRandomExpireTime(24*time.Hour))
+	}
+
+	_, err := pipe.Exec(ctx)
+
+	if err != nil && err != redis.Nil {
+		// Redis 挂了，记录日志，降级去查 DB
+		LogRedisError(ctx, err)
+	} else if err == nil {
+		// Redis 正常返回
+		// 核心逻辑：先看 Key 在不在
+		if existsCmd.Val() > 0 {
+			// Case A: 缓存命中 (Hit)
+			// 此时 Redis 是权威的。SIsMember 说 false 就是 false (绝对未拉黑)。
+			// 注意：哪怕 Set 里只有 "__EMPTY__"，SIsMember 也会正确返回 false。
+			return isMemberCmd.Val(), nil
+		}
+		// Case B: 缓存未命中 (Miss) -> Exists 返回 0
+		// 代码继续往下走，去查数据库
+	}
+
+	// ==================== 2. 缓存未命中，回源查询 MySQL ====================
+	var relation model.UserRelation
+	err = r.db.WithContext(ctx).
+		Where("user_uuid = ? AND peer_uuid = ? AND status = ? AND deleted_at IS NULL",
+			userUUID, targetUUID, 1).
+		First(&relation).Error
+
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			// 用户没有拉黑目标，需要缓存空值
+			// ==================== 3. 重建缓存（空值） ====================
+			pipe = r.redisClient.Pipeline()
+			pipe.Del(ctx, cacheKey) // 清理旧数据
+			// 空列表也用 Set，写入特殊标记
+			pipe.SAdd(ctx, cacheKey, "__EMPTY__")
+			// 空值缓存时间短一点 (5分钟)
+			pipe.Expire(ctx, cacheKey, 5*time.Minute)
+
+			// 执行空值的 Pipeline
+			if _, err := pipe.Exec(ctx); err != nil {
+				// 发送到重试队列
+				cmds := []mq.RedisCmd{
+					{Command: "del", Args: []interface{}{cacheKey}},
+					{Command: "sadd", Args: []interface{}{cacheKey, "__EMPTY__"}},
+					{Command: "expire", Args: []interface{}{cacheKey, int((5 * time.Minute).Seconds())}},
+				}
+				task := mq.BuildPipelineTask(cmds).
+					WithSource("BlacklistRepository.IsBlocked.RebuildEmptyCache")
+				LogAndRetryRedisError(ctx, task, err)
+			}
+
+			return false, nil
+		}
+		// 其他数据库错误
+		return false, WrapDBError(err)
+	}
+
+	// ==================== 4. 找到了拉黑记录，重建缓存 ====================
+	pipe = r.redisClient.Pipeline()
+	pipe.Del(ctx, cacheKey) // 清理旧数据
+	pipe.SAdd(ctx, cacheKey, targetUUID)
+	pipe.Expire(ctx, cacheKey, getRandomExpireTime(24*time.Hour))
+
+	// 异步执行写入，不需要等待结果，让接口响应更快
+	if _, err := pipe.Exec(ctx); err != nil {
+		// 发送到重试队列
+		cmds := []mq.RedisCmd{
+			{Command: "del", Args: []interface{}{cacheKey}},
+			{Command: "sadd", Args: []interface{}{cacheKey, targetUUID}},
+			{Command: "expire", Args: []interface{}{cacheKey, int(getRandomExpireTime(24 * time.Hour).Seconds())}},
+		}
+		task := mq.BuildPipelineTask(cmds).
+			WithSource("BlacklistRepository.IsBlocked.RebuildCache")
+		LogAndRetryRedisError(ctx, task, err)
+	}
+
+	return true, nil
 }
 
 // GetBlacklistRelation 获取拉黑关系

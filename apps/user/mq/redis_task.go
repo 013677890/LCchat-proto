@@ -133,6 +133,32 @@ func BuildSRemTask(key string, members ...interface{}) RedisTask {
 	}
 }
 
+// BuildZAddTask 构造一个 ZADD 任务
+func BuildZAddTask(key string, score float64, member interface{}) RedisTask {
+	return RedisTask{
+		Type:       CmdSimple,
+		Command:    "zadd",
+		Args:       []interface{}{key, score, member},
+		Timestamp:  time.Now(),
+		RetryCount: 0,
+		MaxRetries: 3,
+	}
+}
+
+// BuildZRemTask 构造一个 ZREM 任务
+func BuildZRemTask(key string, members ...interface{}) RedisTask {
+	args := []interface{}{key}
+	args = append(args, members...)
+	return RedisTask{
+		Type:       CmdSimple,
+		Command:    "zrem",
+		Args:       args,
+		Timestamp:  time.Now(),
+		RetryCount: 0,
+		MaxRetries: 3,
+	}
+}
+
 // BuildPipelineTask 构造一个 Pipeline 任务
 func BuildPipelineTask(cmds []RedisCmd) RedisTask {
 	return RedisTask{

@@ -12,7 +12,8 @@ import (
 // InitRouter 初始化路由
 // authHandler: 认证处理器（依赖注入）
 // userHandler: 用户信息处理器（依赖注入）
-func InitRouter(authHandler *v1.AuthHandler, userHandler *v1.UserHandler) *gin.Engine {
+// friendHandler: 好友处理器（依赖注入）
+func InitRouter(authHandler *v1.AuthHandler, userHandler *v1.UserHandler, friendHandler *v1.FriendHandler) *gin.Engine {
 	r := gin.New()
 
 	// 恢复中间件
@@ -92,7 +93,6 @@ func InitRouter(authHandler *v1.AuthHandler, userHandler *v1.UserHandler) *gin.E
 				user.POST("/avatar", userHandler.UploadAvatar)
 				user.GET("/qrcode", userHandler.GetQRCode)
 				user.POST("/batch-profile", userHandler.BatchGetProfile)
-				user.GET("/search", userHandler.SearchUser)
 
 				// 敏感操作使用更严格的限流
 				user.POST("/change-password",
@@ -106,6 +106,24 @@ func InitRouter(authHandler *v1.AuthHandler, userHandler *v1.UserHandler) *gin.E
 					userHandler.DeleteAccount)
 
 				user.POST("/logout", authHandler.Logout)
+			}
+			friend := auth.Group("/friend")
+			{
+				friend.GET("/search", friendHandler.SearchUser)
+				friend.POST("/apply", friendHandler.SendFriendApply)
+				friend.GET("/apply/list", friendHandler.GetFriendApplyList)
+				friend.GET("/apply/sent", friendHandler.GetSentApplyList)
+				friend.POST("/apply/handle", friendHandler.HandleFriendApply)
+				friend.GET("/apply/unread", friendHandler.GetUnreadApplyCount)
+				friend.POST("/apply/read", friendHandler.MarkApplyAsRead)
+				friend.GET("/list", friendHandler.GetFriendList)
+				friend.POST("/sync", friendHandler.SyncFriendList)
+				friend.POST("/delete", friendHandler.DeleteFriend)
+				friend.POST("/remark", friendHandler.SetFriendRemark)
+				friend.POST("/tag", friendHandler.SetFriendTag)
+				friend.GET("/tags", friendHandler.GetTagList)
+				friend.POST("/check", friendHandler.CheckIsFriend)
+				friend.POST("/relation", friendHandler.GetRelationStatus)
 			}
 		}
 	}

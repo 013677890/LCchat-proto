@@ -10,7 +10,7 @@ import (
 
 // applyRepositoryImpl 好友申请数据访问层实现
 type applyRepositoryImpl struct {
-	db *gorm.DB
+	db          *gorm.DB
 	redisClient *redis.Client
 }
 
@@ -21,7 +21,11 @@ func NewApplyRepository(db *gorm.DB, redisClient *redis.Client) IApplyRepository
 
 // Create 创建好友申请
 func (r *applyRepositoryImpl) Create(ctx context.Context, apply *model.ApplyRequest) (*model.ApplyRequest, error) {
-	return nil, nil // TODO: 创建好友申请
+	err := r.db.WithContext(ctx).Create(apply).Error
+	if err != nil {
+		return nil, WrapDBError(err)
+	}
+	return apply, nil
 }
 
 // GetByID 根据ID获取好友申请
@@ -55,6 +59,8 @@ func (r *applyRepositoryImpl) GetUnreadCount(ctx context.Context, targetUUID str
 }
 
 // ExistsPendingRequest 检查是否存在待处理的申请
+// 采用 Cache-Aside Pattern：优先查 Redis ZSet，未命中则回源 MySQL 并缓存
+// 使用 ZSet 存储目标用户的待处理申请，以申请时间戳为 score
 func (r *applyRepositoryImpl) ExistsPendingRequest(ctx context.Context, applicantUUID, targetUUID string) (bool, error) {
 	return false, nil // TODO: 检查是否存在待处理的申请
 }
