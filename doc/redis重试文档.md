@@ -219,6 +219,25 @@ if err != nil {
 }
 ```
 
+#### 1.1 读路径回填不重试（Fire and Forget）
+
+缓存回填（read-through / cache-aside rebuild）是“读路径”的副作用：Redis 写失败不会影响主流程正确性，下次请求仍会回源并再次尝试回填。因此回填失败不应走 MQ 重试队列，只需要记录日志即可。
+
+```go
+// ✅ 回填失败只记录日志，不使用重试队列
+pipe := r.redis.Pipeline()
+pipe.Set(ctx, key, value, ttl)
+_, err := pipe.Exec(ctx)
+if err != nil {
+    LogRedisError(ctx, err) // Fire and Forget
+}
+```
+
+适用场景：
+- Query/Read 后的缓存重建（Set/Hash/Set/ZSet 回填）
+- 空值缓存写入
+- 批量回填 Pipeline
+
 ### 2. 幂等性要求
 
 所有发送到重试队列的操作必须是幂等的（多次执行结果相同）：

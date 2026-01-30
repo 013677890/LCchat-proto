@@ -96,12 +96,25 @@ in this project. It is intended for AI agents and new contributors.
 - After proto changes, regenerate stubs using existing tooling or scripts.
 
 #### 3.12 Redis Key Design (Common Patterns)
-- Verification codes: `user:verify_code:{email}`
-- Rate limit counters:
-  - `user:verify_code:1m:{email}`
-  - `user:verify_code:24h:{email}`
-  - `user:verify_code:1h:{ip}`
-- Tokens: stored via `deviceRepo` helpers.
+每条说明格式：`key` / 数据类型 / TTL / 读写来源 / 说明
+
+- `user:verify_code:{email}:{type}` / String / 业务传入 / `auth_repository` / 邮箱验证码 (type: 1注册 2登录 3重置密码 4换绑邮箱)
+- `user:verify_code:1m:{email}` / Counter / 60s / `auth_repository` / 验证码分钟级限流计数
+- `user:verify_code:24h:{email}` / Counter / 24h / `auth_repository` / 验证码日级限流计数
+- `user:verify_code:1h:{ip}` / Counter / 1h / `auth_repository` / 验证码 IP 限流计数
+
+- `auth:at:{user_uuid}:{device_id}` / String(MD5) / AccessToken 过期时间 / `device_repository` / AccessToken 存储
+- `auth:rt:{user_uuid}:{device_id}` / String / RefreshToken 过期时间 / `device_repository` / RefreshToken 存储
+
+- `user:info:{uuid}` / String(JSON) / 1h±随机抖动; 空值5m / `user_repository` / 用户信息缓存 (空值为 `{}`)
+
+- `user:qrcode:token:{token}` / String / 48h / `user_repository` / token -> userUUID
+- `user:qrcode:user:{user_uuid}` / String / 48h / `user_repository` / userUUID -> token
+
+- `user:relation:friend:{user_uuid}` / Set / 24h±随机抖动; 空值5m / `friend_repository` / 好友集合 (空值占位 `__EMPTY__`)
+- `user:relation:blacklist:{user_uuid}` / Set / 24h±随机抖动; 空值5m / `blacklist_repository` / 拉黑集合 (空值占位 `__EMPTY__`)
+
+- `user:apply:pending:{target_uuid}` / ZSet / 24h±随机抖动; 空值5m / `apply_repository` / 待处理好友申请 (member=applicant UUID, score=created_at unix, 空值占位 `__EMPTY__`)
 
 #### 3.13 Rate Limiting
 - **IP Level Rate Limiting**: Redis-based token bucket algorithm for IP addresses.
