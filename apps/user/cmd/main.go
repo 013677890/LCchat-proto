@@ -159,7 +159,7 @@ func main() {
 
 	// 6. 组装依赖 - Service 层
 	authService := service.NewAuthService(authRepo, deviceRepo)
-	userService := service.NewUserService(userRepo, authRepo)
+	userService := service.NewUserService(userRepo, authRepo, deviceRepo)
 	friendService := service.NewFriendService(friendRepo, applyRepo, userRepo, blacklistRepo)
 	blacklistService := service.NewBlacklistService(blacklistRepo)
 	deviceService := service.NewDeviceService(deviceRepo)

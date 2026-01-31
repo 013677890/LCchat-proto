@@ -50,8 +50,6 @@ func (s *authServiceImpl) Register(ctx context.Context, req *pb.RegisterRequest)
 	// 记录注册请求
 	logger.Info(ctx, "用户注册请求",
 		logger.String("email", utils.MaskEmail(req.Email)),
-		//logger.String("password", req.Password),
-		logger.String("verify_code", req.VerifyCode),
 		logger.String("nickname", req.Nickname),
 		logger.String("telephone", req.Telephone),
 	)

@@ -6,6 +6,7 @@ import (
 	"ChatServer/apps/user/internal/utils"
 	pb "ChatServer/apps/user/pb"
 	"ChatServer/consts"
+	"ChatServer/pkg/async"
 	"ChatServer/pkg/logger"
 	"ChatServer/pkg/util"
 	"context"
@@ -22,15 +23,17 @@ import (
 
 // userServiceImpl 用户信息服务实现
 type userServiceImpl struct {
-	userRepo repository.IUserRepository
-	authRepo repository.IAuthRepository
+	userRepo   repository.IUserRepository
+	authRepo   repository.IAuthRepository
+	deviceRepo repository.IDeviceRepository
 }
 
 // NewUserService 创建用户信息服务实例
-func NewUserService(userRepo repository.IUserRepository, authRepo repository.IAuthRepository) UserService {
+func NewUserService(userRepo repository.IUserRepository, authRepo repository.IAuthRepository, deviceRepo repository.IDeviceRepository) UserService {
 	return &userServiceImpl{
-		userRepo: userRepo,
-		authRepo: authRepo,
+		userRepo:   userRepo,
+		authRepo:   authRepo,
+		deviceRepo: deviceRepo,
 	}
 }
 
@@ -583,7 +586,21 @@ func (s *userServiceImpl) DeleteAccount(ctx context.Context, req *pb.DeleteAccou
 		return nil, status.Error(codes.Internal, strconv.Itoa(consts.CodeInternalError))
 	}
 
-	// 5. 计算恢复截止时间（30天后）
+	// 5. 异步清理用户所有设备的 Redis 会话（不阻塞返回）
+	async.RunSafe(ctx, func(asyncCtx context.Context) {
+		if err := s.deviceRepo.DeleteByUserUUID(asyncCtx, userUUID); err != nil {
+			logger.Warn(asyncCtx, "清理用户 Redis 会话失败",
+				logger.String("user_uuid", userUUID),
+				logger.ErrorField("error", err),
+			)
+		} else {
+			logger.Info(asyncCtx, "用户 Redis 会话清理完成",
+				logger.String("user_uuid", userUUID),
+			)
+		}
+	}, 5*time.Second)
+
+	// 6. 计算恢复截止时间（30天后）
 	deleteAt := time.Now()
 	recoverDeadline := deleteAt.Add(30 * 24 * time.Hour)
 
@@ -594,7 +611,7 @@ func (s *userServiceImpl) DeleteAccount(ctx context.Context, req *pb.DeleteAccou
 		logger.String("recover_deadline", recoverDeadline.Format(time.RFC3339)),
 	)
 
-	// 6. 返回注销时间和恢复截止时间
+	// 7. 返回注销时间和恢复截止时间
 	return &pb.DeleteAccountResponse{
 		DeleteAt:        deleteAt.Format(time.RFC3339),
 		RecoverDeadline: recoverDeadline.Format(time.RFC3339),
