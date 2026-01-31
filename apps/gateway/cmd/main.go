@@ -7,6 +7,7 @@ import (
 	v1 "ChatServer/apps/gateway/internal/router/v1"
 	"ChatServer/apps/gateway/internal/service"
 	"ChatServer/config"
+	"ChatServer/pkg/async"
 	"ChatServer/pkg/logger"
 	pkgminio "ChatServer/pkg/minio"
 	pkgredis "ChatServer/pkg/redis"
@@ -58,6 +59,39 @@ func main() {
 			_ = err
 		}
 	}()
+
+	// 2.5 初始化 Async 协程池
+	async.SetContextPropagator(func(parent context.Context) context.Context {
+		newCtx := context.Background()
+		if parent == nil {
+			return newCtx
+		}
+		if v := parent.Value("trace_id"); v != nil {
+			newCtx = context.WithValue(newCtx, "trace_id", v)
+		}
+		if v := parent.Value("user_uuid"); v != nil {
+			newCtx = context.WithValue(newCtx, "user_uuid", v)
+		}
+		if v := parent.Value("device_id"); v != nil {
+			newCtx = context.WithValue(newCtx, "device_id", v)
+		}
+		if v := parent.Value("ip"); v != nil {
+			newCtx = context.WithValue(newCtx, "ip", v)
+		}
+		return newCtx
+	})
+
+	asyncCfg := config.DefaultAsyncConfig()
+	if err := async.Init(asyncCfg); err != nil {
+		logger.Error(ctx, "初始化 Async 协程池失败", logger.ErrorField("error", err))
+		os.Exit(1)
+	}
+	defer func() {
+		if err := async.Release(); err != nil {
+			logger.Error(ctx, "释放 Async 协程池失败", logger.ErrorField("error", err))
+		}
+	}()
+	logger.Info(ctx, "Async 协程池初始化完成", logger.Int("pool_size", asyncCfg.PoolSize))
 
 	logger.Info(ctx, "Gateway 服务初始化中...")
 

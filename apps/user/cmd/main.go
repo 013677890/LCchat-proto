@@ -14,6 +14,7 @@ import (
 	"ChatServer/apps/user/mq"
 	userpb "ChatServer/apps/user/pb"
 	"ChatServer/config"
+	"ChatServer/pkg/async"
 	"ChatServer/pkg/kafka"
 	"ChatServer/pkg/logger"
 	"ChatServer/pkg/mysql"
@@ -36,6 +37,38 @@ func main() {
 	}
 	logger.ReplaceGlobal(zl)
 	defer zl.Sync()
+
+	// 1.5 初始化 Async 协程池
+	async.SetContextPropagator(func(parent context.Context) context.Context {
+		newCtx := context.Background()
+		if parent == nil {
+			return newCtx
+		}
+		if v := parent.Value("trace_id"); v != nil {
+			newCtx = context.WithValue(newCtx, "trace_id", v)
+		}
+		if v := parent.Value("user_uuid"); v != nil {
+			newCtx = context.WithValue(newCtx, "user_uuid", v)
+		}
+		if v := parent.Value("device_id"); v != nil {
+			newCtx = context.WithValue(newCtx, "device_id", v)
+		}
+		if v := parent.Value("ip"); v != nil {
+			newCtx = context.WithValue(newCtx, "ip", v)
+		}
+		return newCtx
+	})
+
+	asyncCfg := config.DefaultAsyncConfig()
+	if err := async.Init(asyncCfg); err != nil {
+		log.Fatalf("初始化 Async 协程池失败: %v", err)
+	}
+	defer func() {
+		if err := async.Release(); err != nil {
+			logger.Error(ctx, "释放 Async 协程池失败", logger.ErrorField("error", err))
+		}
+	}()
+	logger.Info(ctx, "Async 协程池初始化完成", logger.Int("pool_size", asyncCfg.PoolSize))
 
 	// 2. 初始化MySQL
 	dbCfg := config.DefaultMySQLConfig()
