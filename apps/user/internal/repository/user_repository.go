@@ -2,8 +2,8 @@ package repository
 
 import (
 	"ChatServer/apps/user/mq"
-	"ChatServer/pkg/async"
 	"ChatServer/model"
+	"ChatServer/pkg/async"
 	"context"
 	"encoding/json"
 	"errors"
@@ -92,22 +92,137 @@ func (r *userRepositoryImpl) GetByPhone(ctx context.Context, telephone string) (
 }
 
 // BatchGetByUUIDs 批量查询用户信息
+// 返回结果按传入的 uuids 顺序排列，不存在的用户不包含在结果中
 func (r *userRepositoryImpl) BatchGetByUUIDs(ctx context.Context, uuids []string) ([]*model.UserInfo, error) {
 	if len(uuids) == 0 {
 		return []*model.UserInfo{}, nil
 	}
 
-	// 查询数据库
-	var users []*model.UserInfo
-	err := r.db.WithContext(ctx).
-		Where("uuid IN ? AND deleted_at IS NULL", uuids).
-		Find(&users).
-		Error
-	if err != nil {
-		return nil, WrapDBError(err)
+	// 用于汇总所有查询结果 (uuid -> *UserInfo, nil 表示用户不存在)
+	userMap := make(map[string]*model.UserInfo, len(uuids))
+	missUUIDs := make([]string, 0, len(uuids))
+
+	// ==================== 1. 批量查询 Redis ====================
+	keys := make([]string, 0, len(uuids))
+	for _, uuid := range uuids {
+		keys = append(keys, fmt.Sprintf("user:info:%s", uuid))
 	}
 
-	return users, nil
+	cachedValues, err := r.redisClient.MGet(ctx, keys...).Result()
+	if err != nil && err != redis.Nil {
+		LogRedisError(ctx, err)
+		// Redis 异常时降级走 DB 全量查询
+		cachedValues = nil
+	}
+
+	if cachedValues != nil {
+		for i, value := range cachedValues {
+			uuid := uuids[i]
+
+			if value == nil {
+				// key 不存在，需要回源
+				missUUIDs = append(missUUIDs, uuid)
+				continue
+			}
+
+			var raw string
+			switch v := value.(type) {
+			case string:
+				raw = v
+			case []byte:
+				raw = string(v)
+			default:
+				missUUIDs = append(missUUIDs, uuid)
+				continue
+			}
+
+			// 空占位符 `{}` 表示用户不存在，标记为已处理（nil），不回源
+			if raw == "" || raw == "{}" {
+				userMap[uuid] = nil // 标记为已处理，用户不存在
+				continue
+			}
+
+			var user model.UserInfo
+			if err := json.Unmarshal([]byte(raw), &user); err != nil {
+				// 反序列化失败，需要回源
+				missUUIDs = append(missUUIDs, uuid)
+				continue
+			}
+			userMap[uuid] = &user
+		}
+	} else {
+		// Redis 完全不可用，全部回源
+		missUUIDs = append(missUUIDs, uuids...)
+	}
+
+	// ==================== 2. 对未命中部分回源 MySQL ====================
+	if len(missUUIDs) > 0 {
+		var dbUsers []*model.UserInfo
+		err = r.db.WithContext(ctx).
+			Where("uuid IN ? AND deleted_at IS NULL", missUUIDs).
+			Find(&dbUsers).
+			Error
+		if err != nil {
+			return nil, WrapDBError(err)
+		}
+
+		// 将 DB 结果放入 Map
+		foundUUIDs := make(map[string]struct{}, len(dbUsers))
+		for _, user := range dbUsers {
+			if user != nil && user.Uuid != "" {
+				userMap[user.Uuid] = user
+				foundUUIDs[user.Uuid] = struct{}{}
+			}
+		}
+
+		// 标记不存在的用户
+		for _, uuid := range missUUIDs {
+			if _, ok := foundUUIDs[uuid]; !ok {
+				userMap[uuid] = nil // 用户不存在
+			}
+		}
+
+		// ==================== 3. 异步回填 Redis 缓存 ====================
+		async.RunSafe(ctx, func(runCtx context.Context) {
+			pipe := r.redisClient.Pipeline()
+
+			for _, user := range dbUsers {
+				if user == nil || user.Uuid == "" {
+					continue
+				}
+				userJSON, err := json.Marshal(user)
+				if err != nil {
+					continue
+				}
+				cacheKey := fmt.Sprintf("user:info:%s", user.Uuid)
+				pipe.Set(runCtx, cacheKey, userJSON, getRandomExpireTime(1*time.Hour))
+			}
+
+			// 对不存在的 UUID 写入空占位，避免缓存穿透
+			for _, uuid := range missUUIDs {
+				if _, ok := foundUUIDs[uuid]; ok {
+					continue
+				}
+				cacheKey := fmt.Sprintf("user:info:%s", uuid)
+				pipe.Set(runCtx, cacheKey, "{}", getRandomExpireTime(5*time.Minute))
+			}
+
+			if _, err := pipe.Exec(runCtx); err != nil {
+				LogRedisError(runCtx, err)
+			}
+		}, 0)
+	}
+
+	// ==================== 4. 按原始 uuids 顺序构建结果 ====================
+	result := make([]*model.UserInfo, 0, len(uuids))
+	for _, uuid := range uuids {
+		if user, ok := userMap[uuid]; ok && user != nil {
+			result = append(result, user)
+		}
+		// user == nil 表示用户不存在，跳过
+	}
+
+	return result, nil
 }
 
 // Update 更新用户信息
