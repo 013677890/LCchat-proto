@@ -51,7 +51,7 @@ func (h *FriendHandler) SearchUser(c *gin.Context) {
 		req.Page = 1
 	}
 	if req.PageSize == 0 {
-		req.PageSize = 20
+		req.PageSize = 100
 	}
 
 	// 3. 调用服务层处理业务逻辑（依赖注入）

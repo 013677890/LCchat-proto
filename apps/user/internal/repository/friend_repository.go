@@ -24,8 +24,51 @@ func NewFriendRepository(db *gorm.DB, redisClient *redis.Client) IFriendReposito
 }
 
 // GetFriendList 获取好友列表
-func (r *friendRepositoryImpl) GetFriendList(ctx context.Context, userUUID, groupTag string, page, pageSize int) ([]*model.UserRelation, int64, error) {
-	return nil, 0, nil // TODO: 实现获取好友列表
+func (r *friendRepositoryImpl) GetFriendList(ctx context.Context, userUUID, groupTag string, page, pageSize int) ([]*model.UserRelation, int64, int64, error) {
+	// 兜底分页参数
+	if page <= 0 {
+		page = 1
+	}
+	if pageSize <= 0 {
+		pageSize = 20
+	}
+
+	offset := (page - 1) * pageSize
+
+	// 基础条件：仅好友关系 + 指定用户 + 未删除
+	query := r.db.WithContext(ctx).
+		Model(&model.UserRelation{}).
+		Where("user_uuid = ? AND status = ? AND deleted_at IS NULL", userUUID, 0)
+	if groupTag != "" {
+		query = query.Where("group_tag = ?", groupTag)
+	}
+
+	var total int64
+	var version int64
+
+	// 只在第一页计算 total 和 version，减少数据库开销
+	if page == 1 {
+		// 先查总数
+		if err := query.Count(&total).Error; err != nil {
+			return nil, 0, 0, WrapDBError(err)
+		}
+
+		// 全量初始化版本号取当前服务器时间
+		version = time.Now().UnixMilli()
+	}
+
+	// 再查列表，按创建时间倒序（加二级排序保证稳定性）
+	var relations []*model.UserRelation
+	if err := query.
+		Order("created_at DESC, id DESC").
+		Offset(offset).
+		Limit(pageSize).
+		Find(&relations).
+		Error; err != nil {
+		return nil, 0, 0, WrapDBError(err)
+	}
+
+	return relations, total, version, nil
 }
 
 // GetFriendRelation 获取好友关系

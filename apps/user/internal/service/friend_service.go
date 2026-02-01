@@ -712,7 +712,114 @@ func (s *friendServiceImpl) MarkApplyAsRead(ctx context.Context, req *pb.MarkApp
 
 // GetFriendList 获取好友列表
 func (s *friendServiceImpl) GetFriendList(ctx context.Context, req *pb.GetFriendListRequest) (*pb.GetFriendListResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "获取好友列表功能暂未实现")
+	// 1. 从context中获取当前用户UUID
+	currentUserUUID, ok := ctx.Value("user_uuid").(string)
+	if !ok || currentUserUUID == "" {
+		logger.Error(ctx, "获取用户UUID失败")
+		return nil, status.Error(codes.Unauthenticated, strconv.Itoa(consts.CodeUnauthorized))
+	}
+
+	// 2. 兜底分页参数（即使网关做了默认值，这里也防御性处理）
+	page := req.Page
+	pageSize := req.PageSize
+	if page <= 0 {
+		page = 1
+	}
+	if pageSize <= 0 {
+		pageSize = 20
+	}
+
+	// 3. 获取好友关系列表
+	relations, total, version, err := s.friendRepo.GetFriendList(ctx, currentUserUUID, req.GroupTag, int(page), int(pageSize))
+	if err != nil {
+		logger.Error(ctx, "获取好友列表失败",
+			logger.String("user_uuid", currentUserUUID),
+			logger.String("group_tag", req.GroupTag),
+			logger.Int32("page", page),
+			logger.Int32("page_size", pageSize),
+			logger.ErrorField("error", err),
+		)
+		return nil, status.Error(codes.Internal, strconv.Itoa(consts.CodeInternalError))
+	}
+
+	if len(relations) == 0 {
+		return &pb.GetFriendListResponse{
+			Items: []*pb.FriendItem{},
+			Pagination: &pb.PaginationInfo{
+				Page:       page,
+				PageSize:   pageSize,
+				Total:      total,
+				TotalPages: int32((total + int64(pageSize) - 1) / int64(pageSize)),
+			},
+			Version: version,
+		}, nil
+	}
+
+	// 4. 去重收集好友UUID，减少批量查询压力
+	peerSet := make(map[string]struct{}, len(relations))
+	for _, relation := range relations {
+		if relation != nil && relation.PeerUuid != "" {
+			peerSet[relation.PeerUuid] = struct{}{}
+		}
+	}
+
+	peerUUIDs := make([]string, 0, len(peerSet))
+	for uuid := range peerSet {
+		peerUUIDs = append(peerUUIDs, uuid)
+	}
+
+	// 5. 批量查询好友信息
+	users, err := s.userRepo.BatchGetByUUIDs(ctx, peerUUIDs)
+	if err != nil {
+		logger.Error(ctx, "批量查询好友信息失败",
+			logger.Int("count", len(peerUUIDs)),
+			logger.ErrorField("error", err),
+		)
+		return nil, status.Error(codes.Internal, strconv.Itoa(consts.CodeInternalError))
+	}
+
+	userMap := make(map[string]*model.UserInfo, len(users))
+	for _, user := range users {
+		if user != nil {
+			userMap[user.Uuid] = user
+		}
+	}
+
+	// 6. 组装返回项（好友关系 + 好友信息）
+	items := make([]*pb.FriendItem, 0, len(relations))
+	for _, relation := range relations {
+		if relation == nil {
+			continue
+		}
+
+		user, ok := userMap[relation.PeerUuid]
+		item := &pb.FriendItem{
+			Uuid:      relation.PeerUuid,
+			Remark:    relation.Remark,
+			GroupTag:  relation.GroupTag,
+			Source:    relation.Source,
+			CreatedAt: relation.CreatedAt.UnixMilli(),
+		}
+		if ok {
+			item.Nickname = user.Nickname
+			item.Avatar = user.Avatar
+			item.Gender = int32(user.Gender)
+			item.Signature = user.Signature
+		}
+
+		items = append(items, item)
+	}
+
+	return &pb.GetFriendListResponse{
+		Items: items,
+		Pagination: &pb.PaginationInfo{
+			Page:       page,
+			PageSize:   pageSize,
+			Total:      total,
+			TotalPages: int32((total + int64(pageSize) - 1) / int64(pageSize)),
+		},
+		Version: version,
+	}, nil
 }
 
 // SyncFriendList 好友增量同步

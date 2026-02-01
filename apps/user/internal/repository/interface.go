@@ -113,7 +113,7 @@ type IUserRepository interface {
 type IFriendRepository interface {
 
 	// GetFriendList 获取好友列表
-	GetFriendList(ctx context.Context, userUUID, groupTag string, page, pageSize int) ([]*model.UserRelation, int64, error)
+	GetFriendList(ctx context.Context, userUUID, groupTag string, page, pageSize int) ([]*model.UserRelation, int64, int64, error)
 
 	// GetFriendRelation 获取好友关系
 	GetFriendRelation(ctx context.Context, userUUID, friendUUID string) (*model.UserRelation, error)
