@@ -7,6 +7,7 @@ import (
 	"ChatServer/model"
 	"ChatServer/pkg/logger"
 	"context"
+	"errors"
 	"strconv"
 	"time"
 
@@ -698,7 +699,37 @@ func (s *friendServiceImpl) SyncFriendList(ctx context.Context, req *pb.SyncFrie
 
 // DeleteFriend 删除好友
 func (s *friendServiceImpl) DeleteFriend(ctx context.Context, req *pb.DeleteFriendRequest) error {
-	return status.Error(codes.Unimplemented, "删除好友功能暂未实现")
+	// 1. 从context中获取当前用户UUID
+	currentUserUUID, ok := ctx.Value("user_uuid").(string)
+	if !ok || currentUserUUID == "" {
+		logger.Error(ctx, "获取用户UUID失败")
+		return status.Error(codes.Unauthenticated, strconv.Itoa(consts.CodeUnauthorized))
+	}
+
+	// 2. 参数校验
+	if req == nil || req.UserUuid == "" {
+		return status.Error(codes.InvalidArgument, strconv.Itoa(consts.CodeParamError))
+	}
+
+	// 3. 删除好友关系（单向）
+	if err := s.friendRepo.DeleteFriendRelation(ctx, currentUserUUID, req.UserUuid); err != nil {
+		if errors.Is(err, repository.ErrRecordNotFound) {
+			return status.Error(codes.NotFound, strconv.Itoa(consts.CodeNotFriend))
+		}
+		logger.Error(ctx, "删除好友关系失败",
+			logger.String("user_uuid", currentUserUUID),
+			logger.String("peer_uuid", req.UserUuid),
+			logger.ErrorField("error", err),
+		)
+		return status.Error(codes.Internal, strconv.Itoa(consts.CodeInternalError))
+	}
+
+	logger.Info(ctx, "删除好友成功",
+		logger.String("user_uuid", currentUserUUID),
+		logger.String("peer_uuid", req.UserUuid),
+	)
+
+	return nil
 }
 
 // SetFriendRemark 设置好友备注

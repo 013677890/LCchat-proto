@@ -39,15 +39,7 @@ func (r *applyRepositoryImpl) Create(ctx context.Context, apply *model.ApplyRequ
 	cacheKey := fmt.Sprintf("user:apply:pending:%s", apply.TargetUuid)
 
 	// 使用 Lua 脚本原子性地：检查 Key 存在 -> 移除占位符 -> 添加新成员 -> 续期
-	luaScript := redis.NewScript(`
-		if redis.call('EXISTS', KEYS[1]) == 1 then
-			redis.call('ZREM', KEYS[1], '__EMPTY__')
-			redis.call('ZADD', KEYS[1], ARGV[1], ARGV[2])
-			redis.call('EXPIRE', KEYS[1], ARGV[3])
-			return 1
-		end
-		return 0
-	`)
+	luaScript := redis.NewScript(luaAddPendingApplyIfExists)
 
 	expireSeconds := int(getRandomExpireTime(24 * time.Hour).Seconds())
 	_, err = luaScript.Run(ctx, r.redisClient,

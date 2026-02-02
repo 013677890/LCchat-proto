@@ -126,7 +126,28 @@ func (r *friendRepositoryImpl) CreateFriendRelation(ctx context.Context, userUUI
 
 // DeleteFriendRelation 删除好友关系（单向）
 func (r *friendRepositoryImpl) DeleteFriendRelation(ctx context.Context, userUUID, friendUUID string) error {
-	return nil // TODO: 实现删除好友关系
+	now := time.Now()
+
+	result := r.db.WithContext(ctx).
+		Model(&model.UserRelation{}).
+		Where("user_uuid = ? AND peer_uuid = ? AND status = ? AND deleted_at IS NULL", userUUID, friendUUID, 0).
+		Updates(map[string]interface{}{
+			"status":     2,
+			"deleted_at": gorm.DeletedAt{Time: now, Valid: true},
+			"updated_at": now,
+		})
+
+	if result.Error != nil {
+		return WrapDBError(result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return ErrRecordNotFound
+	}
+
+	// 异步增量更新缓存（仅更新当前用户侧）
+	r.removeFriendCacheAsync(ctx, userUUID, friendUUID)
+
+	return nil
 }
 
 // SetFriendRemark 设置好友备注
@@ -431,6 +452,27 @@ func (r *friendRepositoryImpl) invalidateFriendCacheAsync(ctx context.Context, u
 					LogRedisError(runCtx, err)
 				}
 			}
+		}
+	}, 0)
+}
+
+// removeFriendCacheAsync 异步删除好友缓存（单向）
+// 仅在缓存存在时做增量更新，避免过期后写入不完整集合
+func (r *friendRepositoryImpl) removeFriendCacheAsync(ctx context.Context, userUUID, friendUUID string) {
+	cacheKey := fmt.Sprintf("user:relation:friend:%s", userUUID)
+
+	async.RunSafe(ctx, func(runCtx context.Context) {
+		luaScript := redis.NewScript(luaRemoveFriendIfExists)
+
+		expireSeconds := int(getRandomExpireTime(24 * time.Hour).Seconds())
+		_, err := luaScript.Run(runCtx, r.redisClient,
+			[]string{cacheKey},
+			friendUUID,
+			expireSeconds,
+		).Result()
+
+		if err != nil && err != redis.Nil {
+			LogRedisError(runCtx, err)
 		}
 	}, 0)
 }
