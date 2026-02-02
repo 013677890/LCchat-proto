@@ -1,9 +1,47 @@
 package repository
 
 import (
+	"encoding/json"
 	"math/rand"
+	"strings"
 	"time"
 )
+
+type friendMeta struct {
+	Remark    string `json:"remark"`
+	GroupTag  string `json:"group_tag"`
+	Source    string `json:"source"`
+	UpdatedAt int64  `json:"updated_at"`
+}
+
+func buildFriendMetaJSON(remark, groupTag, source string, updatedAt int64) string {
+	meta := friendMeta{
+		Remark:    remark,
+		GroupTag:  groupTag,
+		Source:    source,
+		UpdatedAt: updatedAt,
+	}
+	data, err := json.Marshal(&meta)
+	if err != nil {
+		return "{}"
+	}
+	return string(data)
+}
+
+func parseFriendMetaJSON(raw string) (*friendMeta, error) {
+	var meta friendMeta
+	if err := json.Unmarshal([]byte(raw), &meta); err != nil {
+		return nil, err
+	}
+	return &meta, nil
+}
+
+func isRedisWrongType(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(err.Error(), "WRONGTYPE")
+}
 
 // getRandomExpireTime 生成带随机抖动的过期时间
 // baseExpire: 基础过期时间

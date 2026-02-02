@@ -166,7 +166,7 @@ func (r *friendRepositoryImpl) GetTagList(ctx context.Context, userUUID string) 
 }
 
 // IsFriend 检查是否是好友
-// 采用 Cache-Aside Pattern：优先查 Redis Set，未命中则回源 MySQL 并缓存
+// 采用 Cache-Aside Pattern：优先查 Redis Hash，未命中则回源 MySQL 并缓存
 func (r *friendRepositoryImpl) IsFriend(ctx context.Context, userUUID, friendUUID string) (bool, error) {
 	cacheKey := fmt.Sprintf("user:relation:friend:%s", userUUID)
 
@@ -176,8 +176,8 @@ func (r *friendRepositoryImpl) IsFriend(ctx context.Context, userUUID, friendUUI
 
 	// 命令1: 检查 Key 是否存在 (区分缓存命中/未命中)
 	existsCmd := pipe.Exists(ctx, cacheKey)
-	// 命令2: 检查是否是好友 (只有 Key 存在时此结果才有效)
-	isMemberCmd := pipe.SIsMember(ctx, cacheKey, friendUUID)
+	// 命令2: 读取好友元数据 (只有 Key 存在时此结果才有效)
+	metaCmd := pipe.HGet(ctx, cacheKey, friendUUID)
 
 	// 概率续期优化：1% 的概率在读取时顺便续期
 	// 无论 Key 是否存在，Expire 都是安全的 (不存在则返回0)
@@ -188,16 +188,29 @@ func (r *friendRepositoryImpl) IsFriend(ctx context.Context, userUUID, friendUUI
 	_, err := pipe.Exec(ctx)
 
 	if err != nil && err != redis.Nil {
-		// Redis 挂了，记录日志，降级去查 DB
-		LogRedisError(ctx, err)
+		if isRedisWrongType(err) {
+			_ = r.redisClient.Del(ctx, cacheKey).Err()
+		} else {
+			// Redis 挂了，记录日志，降级去查 DB
+			LogRedisError(ctx, err)
+		}
 	} else if err == nil {
 		// Redis 正常返回
 		// 核心逻辑：先看 Key 在不在
 		if existsCmd.Val() > 0 {
 			// Case A: 缓存命中 (Hit)
-			// 此时 Redis 是权威的。SIsMember 说 false 就是 false (绝对非好友)。
-			// 注意：哪怕 Set 里只有 "__EMPTY__"，SIsMember 也会正确返回 false。
-			return isMemberCmd.Val(), nil
+			if metaCmd.Err() == nil {
+				_, _ = parseFriendMetaJSON(metaCmd.Val())
+				return true, nil
+			}
+			if metaCmd.Err() == redis.Nil {
+				return false, nil
+			}
+			if isRedisWrongType(metaCmd.Err()) {
+				_ = r.redisClient.Del(ctx, cacheKey).Err()
+			} else {
+				LogRedisError(ctx, metaCmd.Err())
+			}
 		}
 		// Case B: 缓存未命中 (Miss) -> Exists 返回 0
 		// 代码继续往下走，去查数据库
@@ -213,45 +226,19 @@ func (r *friendRepositoryImpl) IsFriend(ctx context.Context, userUUID, friendUUI
 		return false, WrapDBError(err)
 	}
 
-	// ==================== 3. 重建缓存 (保持 Set 类型) ====================
-	if len(relations) == 0 {
-		// [修复类型冲突] 空列表也用 Set，写入特殊标记
-		async.RunSafe(ctx, func(runCtx context.Context) {
-			pipe := r.redisClient.Pipeline()
-			pipe.Del(runCtx, cacheKey)
-			pipe.SAdd(runCtx, cacheKey, "__EMPTY__")
-			pipe.Expire(runCtx, cacheKey, 5*time.Minute)
-			if _, err := pipe.Exec(runCtx); err != nil {
-				LogRedisError(runCtx, err)
-			}
-		}, 0)
-	} else {
-		// 提取 UUID
-		friendUUIDs := make([]interface{}, len(relations))
-		// 优化：顺便在内存里判断一下结果，省得最后再遍历
-		isFriendFound := false
-		for i, relation := range relations {
-			friendUUIDs[i] = relation.PeerUuid
-			if relation.PeerUuid == friendUUID {
-				isFriendFound = true
-			}
+	// ==================== 3. 重建缓存 (Hash) ====================
+	r.rebuildFriendCacheAsync(ctx, userUUID, relations)
+
+	// 计算结果
+	isFriendFound := false
+	for _, relation := range relations {
+		if relation.PeerUuid == friendUUID {
+			isFriendFound = true
+			break
 		}
-
-		async.RunSafe(ctx, func(runCtx context.Context) {
-			pipe := r.redisClient.Pipeline()
-			pipe.Del(runCtx, cacheKey)
-			pipe.SAdd(runCtx, cacheKey, friendUUIDs...)
-			pipe.Expire(runCtx, cacheKey, getRandomExpireTime(24*time.Hour))
-			if _, err := pipe.Exec(runCtx); err != nil {
-				LogRedisError(runCtx, err)
-			}
-		}, 0)
-
-		return isFriendFound, nil
 	}
 
-	// 如果是空列表，那肯定不是好友
-	return false, nil
+	return isFriendFound, nil
 }
 
 // GetRelationStatus 获取关系状态
@@ -320,29 +307,24 @@ func (r *friendRepositoryImpl) SyncFriendList(ctx context.Context, userUUID stri
     return relations, nextVersion, hasMore, nil
 }
 
-// BatchCheckIsFriend 批量检查是否为好友（使用Redis Set优化）
+// BatchCheckIsFriend 批量检查是否为好友（使用Redis Hash优化）
 // 返回：map[peerUUID]isFriend
 func (r *friendRepositoryImpl) BatchCheckIsFriend(ctx context.Context, userUUID string, peerUUIDs []string) (map[string]bool, error) {
 	if len(peerUUIDs) == 0 {
 		return make(map[string]bool), nil
 	}
 
-	// 构建 Redis Set key
+	// 构建 Redis Hash key
 	cacheKey := fmt.Sprintf("user:relation:friend:%s", userUUID)
 
 	// ==================== 1. 组合查询 Redis (Pipeline) ====================
-	// 优化：使用多个 SIsMember 而不是 SMembers
-	// 好处：用户有 2000 好友，只查 2 人时，网络传输从 2000 个 UUID → 2 个 bool
 	pipe := r.redisClient.Pipeline()
 
 	// 命令1: 检查 Key 是否存在 (区分缓存命中/未命中)
 	existsCmd := pipe.Exists(ctx, cacheKey)
 
-	// 命令2: 批量检查每个 peerUUID 是否是好友
-	isMemberCmds := make([]*redis.BoolCmd, len(peerUUIDs))
-	for i, peerUUID := range peerUUIDs {
-		isMemberCmds[i] = pipe.SIsMember(ctx, cacheKey, peerUUID)
-	}
+	// 命令2: 批量读取好友元数据
+	metaCmd := pipe.HMGet(ctx, cacheKey, peerUUIDs...)
 
 	// 概率续期优化：1% 的概率在读取时顺便续期
 	// 无论 Key 是否存在，Expire 都是安全的 (不存在则返回0)
@@ -353,25 +335,42 @@ func (r *friendRepositoryImpl) BatchCheckIsFriend(ctx context.Context, userUUID 
 	_, err := pipe.Exec(ctx)
 
 	if err != nil && err != redis.Nil {
-		// Redis 挂了，记录日志，降级去查 DB
-		LogRedisError(ctx, err)
+		if isRedisWrongType(err) {
+			_ = r.redisClient.Del(ctx, cacheKey).Err()
+		} else {
+			// Redis 挂了，记录日志，降级去查 DB
+			LogRedisError(ctx, err)
+		}
 	} else if err == nil {
 		// Redis 正常返回
 		// 核心逻辑：先看 Key 在不在
 		if existsCmd.Val() > 0 {
-			// Case A: 缓存命中 (Hit)
-			// 此时 Redis 是权威的，直接返回结果
-			result := make(map[string]bool, len(peerUUIDs))
-			for i, peerUUID := range peerUUIDs {
-				// 如果 SIsMember 出错，保守返回 false（后续会降级查 DB）
-				if isMemberCmds[i].Err() != nil {
-					LogRedisError(ctx, isMemberCmds[i].Err())
-					result[peerUUID] = false
+			if metaCmd.Err() != nil {
+				if isRedisWrongType(metaCmd.Err()) {
+					_ = r.redisClient.Del(ctx, cacheKey).Err()
 				} else {
-					result[peerUUID] = isMemberCmds[i].Val()
+					LogRedisError(ctx, metaCmd.Err())
 				}
+			} else {
+				result := make(map[string]bool, len(peerUUIDs))
+				values := metaCmd.Val()
+				for i, peerUUID := range peerUUIDs {
+					if i >= len(values) || values[i] == nil {
+						result[peerUUID] = false
+						continue
+					}
+					switch v := values[i].(type) {
+					case string:
+						_, _ = parseFriendMetaJSON(v)
+					case []byte:
+						_, _ = parseFriendMetaJSON(string(v))
+					default:
+						// 非预期类型，直接认为存在
+					}
+					result[peerUUID] = true
+				}
+				return result, nil
 			}
-			return result, nil
 		}
 		// Case B: 缓存未命中 (Miss) -> Exists 返回 0
 		// 代码继续往下走，去查数据库
@@ -387,35 +386,15 @@ func (r *friendRepositoryImpl) BatchCheckIsFriend(ctx context.Context, userUUID 
 		return nil, WrapDBError(err)
 	}
 
-	// ==================== 3. 统一重建缓存 (保持 Set 类型) ====================
-	// 优化：合并空列表和非空列表的 Pipeline 逻辑，避免代码重复
-	async.RunSafe(ctx, func(runCtx context.Context) {
-		pipe := r.redisClient.Pipeline()
-		pipe.Del(runCtx, cacheKey)
-		if len(relations) == 0 {
-			pipe.SAdd(runCtx, cacheKey, "__EMPTY__")
-			pipe.Expire(runCtx, cacheKey, 5*time.Minute)
-		} else {
-			friendUUIDs := make([]interface{}, len(relations))
-			for i, relation := range relations {
-				friendUUIDs[i] = relation.PeerUuid
-			}
-			pipe.SAdd(runCtx, cacheKey, friendUUIDs...)
-			pipe.Expire(runCtx, cacheKey, getRandomExpireTime(24*time.Hour))
-		}
-		if _, err := pipe.Exec(runCtx); err != nil {
-			LogRedisError(runCtx, err)
-		}
-	}, 0)
+	// ==================== 3. 重建缓存 (Hash) ====================
+	r.rebuildFriendCacheAsync(ctx, userUUID, relations)
 
 	// ==================== 4. 构建返回结果 ====================
-	// 将 DB 查询到的好友集合转为 map
+	// 构建返回结果
 	friendSet := make(map[string]bool, len(relations))
 	for _, relation := range relations {
 		friendSet[relation.PeerUuid] = true
 	}
-
-	// 构建返回结果
 	result := make(map[string]bool, len(peerUUIDs))
 	for _, peerUUID := range peerUUIDs {
 		result[peerUUID] = friendSet[peerUUID]
@@ -428,50 +407,92 @@ func (r *friendRepositoryImpl) BatchCheckIsFriend(ctx context.Context, userUUID 
 // 在单个协程中同时处理 userUUID 和 friendUUID 的缓存更新
 func (r *friendRepositoryImpl) invalidateFriendCacheAsync(ctx context.Context, userUUID, friendUUID string) {
 	async.RunSafe(ctx, func(runCtx context.Context) {
-		// 处理两个用户的缓存
 		pairs := []struct{ userKey, newFriend string }{
 			{fmt.Sprintf("user:relation:friend:%s", userUUID), friendUUID},
 			{fmt.Sprintf("user:relation:friend:%s", friendUUID), userUUID},
 		}
+		metaJSON := buildFriendMetaJSON("", "", "", time.Now().UnixMilli())
+		expireSeconds := int(getRandomExpireTime(24 * time.Hour).Seconds())
+		luaScript := redis.NewScript(luaInsertFriendMetaIfExists)
 
 		for _, pair := range pairs {
-			// 检查缓存是否存在
-			exists, err := r.redisClient.Exists(runCtx, pair.userKey).Result()
-			if err != nil {
-				LogRedisError(runCtx, err)
-				continue
-			}
-
-			if exists > 0 {
-				// 缓存存在，直接添加新好友到 Set
-				pipe := r.redisClient.Pipeline()
-				pipe.SRem(runCtx, pair.userKey, "__EMPTY__")
-				pipe.SAdd(runCtx, pair.userKey, pair.newFriend)
-				pipe.Expire(runCtx, pair.userKey, getRandomExpireTime(24*time.Hour))
-				if _, err := pipe.Exec(runCtx); err != nil {
-					LogRedisError(runCtx, err)
+			_, err := luaScript.Run(runCtx, r.redisClient,
+				[]string{pair.userKey},
+				pair.newFriend,
+				metaJSON,
+				expireSeconds,
+			).Result()
+			if err != nil && err != redis.Nil {
+				if isRedisWrongType(err) {
+					_ = r.redisClient.Del(runCtx, pair.userKey).Err()
+					continue
 				}
+				LogRedisError(runCtx, err)
 			}
 		}
 	}, 0)
 }
 
 // removeFriendCacheAsync 异步删除好友缓存（单向）
-// 仅在缓存存在时做增量更新，避免过期后写入不完整集合
+// 仅在缓存存在时做增量更新，避免过期后写入不完整 Hash
 func (r *friendRepositoryImpl) removeFriendCacheAsync(ctx context.Context, userUUID, friendUUID string) {
 	cacheKey := fmt.Sprintf("user:relation:friend:%s", userUUID)
 
 	async.RunSafe(ctx, func(runCtx context.Context) {
-		luaScript := redis.NewScript(luaRemoveFriendIfExists)
-
+		luaScript := redis.NewScript(luaRemoveFriendMetaIfExists)
+		placeholderJSON := buildFriendMetaJSON("", "", "", 0)
 		expireSeconds := int(getRandomExpireTime(24 * time.Hour).Seconds())
 		_, err := luaScript.Run(runCtx, r.redisClient,
 			[]string{cacheKey},
 			friendUUID,
+			placeholderJSON,
 			expireSeconds,
 		).Result()
 
 		if err != nil && err != redis.Nil {
+			if isRedisWrongType(err) {
+				_ = r.redisClient.Del(runCtx, cacheKey).Err()
+				return
+			}
+			LogRedisError(runCtx, err)
+		}
+	}, 0)
+}
+
+// rebuildFriendCacheAsync 异步重建好友关系缓存（Hash）
+func (r *friendRepositoryImpl) rebuildFriendCacheAsync(ctx context.Context, userUUID string, relations []model.UserRelation) {
+	cacheKey := fmt.Sprintf("user:relation:friend:%s", userUUID)
+	async.RunSafe(ctx, func(runCtx context.Context) {
+		pipe := r.redisClient.Pipeline()
+		pipe.Del(runCtx, cacheKey)
+
+		if len(relations) == 0 {
+			pipe.HSet(runCtx, cacheKey, "__EMPTY__", buildFriendMetaJSON("", "", "", 0))
+			pipe.Expire(runCtx, cacheKey, 5*time.Minute)
+		} else {
+			fields := make(map[string]interface{}, len(relations))
+			for _, relation := range relations {
+				if relation.PeerUuid == "" {
+					continue
+				}
+				fields[relation.PeerUuid] = buildFriendMetaJSON(
+					relation.Remark,
+					relation.GroupTag,
+					relation.Source,
+					relation.UpdatedAt.UnixMilli(),
+				)
+			}
+			if len(fields) > 0 {
+				pipe.HSet(runCtx, cacheKey, fields)
+			}
+			pipe.Expire(runCtx, cacheKey, getRandomExpireTime(24*time.Hour))
+		}
+
+		if _, err := pipe.Exec(runCtx); err != nil && err != redis.Nil {
+			if isRedisWrongType(err) {
+				_ = r.redisClient.Del(runCtx, cacheKey).Err()
+				return
+			}
 			LogRedisError(runCtx, err)
 		}
 	}, 0)

@@ -103,22 +103,27 @@
 
 | Key Pattern | 数据类型 | TTL | Repository | 说明 |
 |-------------|----------|-----|------------|------|
-| `user:relation:friend:{user_uuid}` | Set | 24h ± 随机抖动<br>空值 5m | `friend_repository` | 好友 UUID 集合<br>空值占位: `__EMPTY__` |
+| `user:relation:friend:{user_uuid}` | Hash | 24h ± 随机抖动<br>空值 5m | `friend_repository` | 好友元数据（field=peer_uuid, value=json）<br>空值占位: `__EMPTY__` |
+
+value JSON 字段示例：
+```json
+{"remark":"","group_tag":"","source":"","updated_at":1736344200000}
+```
 
 #### 操作函数
 
 | 函数 | 操作 | Key | 说明 |
 |------|------|-----|------|
-| `IsFriend()` | Pipeline EXISTS + SISMEMBER | `friend:*` | 单次检查 |
-| `BatchCheckIsFriend()` | Pipeline EXISTS + SISMEMBER × N | `friend:*` | 批量检查 |
-| `CreateFriendRelation()` | SREM + SADD + EXPIRE（条件） | `friend:*` | 增量更新 |
-| `invalidateFriendCacheAsync()` | SREM + SADD + EXPIRE | `friend:*` | 异步更新双方缓存 |
+| `IsFriend()` | Pipeline EXISTS + HGET | `friend:*` | 单次检查 |
+| `BatchCheckIsFriend()` | Pipeline EXISTS + HMGET | `friend:*` | 批量检查 |
+| `CreateFriendRelation()` | Lua HSET/HSETNX + EXPIRE（条件） | `friend:*` | 增量更新 |
+| `invalidateFriendCacheAsync()` | Lua HSET/HSETNX + EXPIRE | `friend:*` | 异步更新双方缓存 |
 
 **Cache-Aside 策略**：
 ```
-1. Pipeline: EXISTS + SISMEMBER
+1. Pipeline: EXISTS + HGET
 2. 命中 → 直接返回
-3. 未命中 → 查 MySQL 全量好友 → 异步 SADD 重建
+3. 未命中 → 查 MySQL 全量好友 → 异步 HSET 重建
 ```
 
 ---
@@ -175,7 +180,7 @@ graph TD
 | 策略 | 适用场景 | 示例 |
 |------|---------|------|
 | **失效缓存** | 更新操作 | `UpdateBasicInfo()` → DEL |
-| **增量更新** | 添加成员 | `CreateFriendRelation()` → SADD |
+| **增量更新** | 添加成员 | `CreateFriendRelation()` → HSET |
 | **条件更新** | Key 存在时才写 | `Create()` 申请时 Lua 脚本 |
 
 ### 4.3 空值处理
@@ -183,7 +188,7 @@ graph TD
 | 数据类型 | 空值占位 | TTL |
 |----------|----------|-----|
 | String | `{}` | 5 分钟 |
-| Set/ZSet | `__EMPTY__` | 5 分钟 |
+| Hash/Set/ZSet | `__EMPTY__` | 5 分钟 |
 
 ### 4.4 续期策略
 

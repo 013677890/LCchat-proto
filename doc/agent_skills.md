@@ -121,7 +121,7 @@ in this project. It is intended for AI agents and new contributors.
 - `user:qrcode:token:{token}` / String / 48h / `user_repository` / token -> userUUID
 - `user:qrcode:user:{user_uuid}` / String / 48h / `user_repository` / userUUID -> token
 
-- `user:relation:friend:{user_uuid}` / Set / 24h±随机抖动; 空值5m / `friend_repository` / 好友集合 (空值占位 `__EMPTY__`)
+- `user:relation:friend:{user_uuid}` / Hash / 24h±随机抖动; 空值5m / `friend_repository` / 好友元数据(field=peer_uuid,value=json; 空值占位 `__EMPTY__`)
 - `user:relation:blacklist:{user_uuid}` / Set / 24h±随机抖动; 空值5m / `blacklist_repository` / 拉黑集合 (空值占位 `__EMPTY__`)
 
 - `user:apply:pending:{target_uuid}` / ZSet / 24h±随机抖动; 空值5m / `apply_repository` / 待处理好友申请 (member=applicant UUID, score=created_at unix, 空值占位 `__EMPTY__`)

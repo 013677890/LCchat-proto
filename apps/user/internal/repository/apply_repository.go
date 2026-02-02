@@ -430,36 +430,57 @@ func (r *applyRepositoryImpl) AcceptApplyAndCreateRelation(ctx context.Context, 
 
 	// 4. 事务成功后异步更新 Redis 好友缓存
 	if !alreadyProcessed {
-		r.invalidateFriendCacheAsync(ctx, userUUID, friendUUID)
+		r.invalidateFriendCacheAsync(ctx, userUUID, friendUUID, remark)
 	}
 
 	return alreadyProcessed, nil
 }
 
 // invalidateFriendCacheAsync 异步更新双方的好友缓存
-func (r *applyRepositoryImpl) invalidateFriendCacheAsync(ctx context.Context, userUUID, friendUUID string) {
+func (r *applyRepositoryImpl) invalidateFriendCacheAsync(ctx context.Context, userUUID, friendUUID, remark string) {
 	async.RunSafe(ctx, func(runCtx context.Context) {
 		// 处理两个用户的缓存
-		pairs := []struct{ userKey, newFriend string }{
-			{fmt.Sprintf("user:relation:friend:%s", userUUID), friendUUID},
-			{fmt.Sprintf("user:relation:friend:%s", friendUUID), userUUID},
+		pairs := []struct {
+			userKey   string
+			newFriend string
+			metaJSON  string
+			upsert    bool
+		}{
+			{
+				userKey:   fmt.Sprintf("user:relation:friend:%s", userUUID),
+				newFriend: friendUUID,
+				metaJSON:  buildFriendMetaJSON(remark, "", "", time.Now().UnixMilli()),
+				upsert:    true,
+			},
+			{
+				userKey:   fmt.Sprintf("user:relation:friend:%s", friendUUID),
+				newFriend: userUUID,
+				metaJSON:  buildFriendMetaJSON("", "", "", time.Now().UnixMilli()),
+				upsert:    false,
+			},
 		}
 
-		for _, pair := range pairs {
-			exists, err := r.redisClient.Exists(runCtx, pair.userKey).Result()
-			if err != nil {
-				logger.Error(runCtx, "Redis Exists 失败", logger.ErrorField("error", err))
-				continue
-			}
+		expireSeconds := int(getRandomExpireTime(24 * time.Hour).Seconds())
+		upsertScript := redis.NewScript(luaUpsertFriendMetaIfExists)
+		insertScript := redis.NewScript(luaInsertFriendMetaIfExists)
 
-			if exists > 0 {
-				pipe := r.redisClient.Pipeline()
-				pipe.SRem(runCtx, pair.userKey, "__EMPTY__")
-				pipe.SAdd(runCtx, pair.userKey, pair.newFriend)
-				pipe.Expire(runCtx, pair.userKey, 24*time.Hour+time.Duration(time.Now().UnixNano()%int64(time.Hour)))
-				if _, err := pipe.Exec(runCtx); err != nil {
-					logger.Error(runCtx, "Redis Pipeline 失败", logger.ErrorField("error", err))
+		for _, pair := range pairs {
+			script := insertScript
+			if pair.upsert {
+				script = upsertScript
+			}
+			_, err := script.Run(runCtx, r.redisClient,
+				[]string{pair.userKey},
+				pair.newFriend,
+				pair.metaJSON,
+				expireSeconds,
+			).Result()
+			if err != nil && err != redis.Nil {
+				if isRedisWrongType(err) {
+					_ = r.redisClient.Del(runCtx, pair.userKey).Err()
+					continue
 				}
+				logger.Error(runCtx, "Redis 脚本执行失败", logger.ErrorField("error", err))
 			}
 		}
 	}, 0)
