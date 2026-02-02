@@ -90,6 +90,7 @@ func InitRouter(authHandler *v1.AuthHandler, userHandler *v1.UserHandler, friend
 				user.GET("/profile", userHandler.GetProfile)
 				user.PUT("/profile", userHandler.UpdateProfile)
 				user.GET("/profile/:userUuid", userHandler.GetOtherProfile)
+				user.GET("/search", userHandler.SearchUser)
 				user.POST("/avatar", userHandler.UploadAvatar)
 				user.GET("/qrcode", userHandler.GetQRCode)
 				user.POST("/batch-profile", userHandler.BatchGetProfile)
@@ -109,7 +110,6 @@ func InitRouter(authHandler *v1.AuthHandler, userHandler *v1.UserHandler, friend
 			}
 			friend := auth.Group("/friend")
 			{
-				friend.GET("/search", friendHandler.SearchUser)
 				friend.POST("/apply", friendHandler.SendFriendApply)
 				friend.GET("/apply-list", friendHandler.GetFriendApplyList)
 				friend.GET("/apply/sent", friendHandler.GetSentApplyList)

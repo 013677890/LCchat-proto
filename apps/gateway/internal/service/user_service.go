@@ -158,6 +158,69 @@ func (s *UserServiceImpl) GetOtherProfile(ctx context.Context, req *dto.GetOther
 	return dto.ConvertGetOtherProfileResponseFromProto(userRes.resp, isFriend), nil
 }
 
+// SearchUser 搜索用户
+// ctx: 请求上下文
+// req: 搜索用户请求
+// 返回: 搜索用户响应
+func (s *UserServiceImpl) SearchUser(ctx context.Context, req *dto.SearchUserRequest) (*dto.SearchUserResponse, error) {
+	startTime := time.Now()
+
+	// 1. 转换 DTO 为 Protobuf 请求
+	grpcReq := dto.ConvertToProtoSearchUserRequest(req)
+
+	// 2. 调用用户服务搜索用户(gRPC)
+	grpcResp, err := s.userClient.SearchUser(ctx, grpcReq)
+	if err != nil {
+		// gRPC 调用失败，提取业务错误码
+		code := utils.ExtractErrorCode(err)
+		// 记录错误日志
+		logger.Error(ctx, "调用用户服务 gRPC 失败",
+			logger.ErrorField("error", err),
+			logger.Int("business_code", code),
+			logger.String("business_message", consts.GetMessage(code)),
+			logger.Duration("duration", time.Since(startTime)),
+		)
+		// 返回业务错误（作为 Go error 返回，由 Handler 层处理）
+		return nil, err
+	}
+
+	resp := dto.ConvertSearchUserResponseFromProto(grpcResp)
+	if resp == nil || len(resp.Items) == 0 {
+		return resp, nil
+	}
+
+	// 3. 尝试补充好友关系（逐条判断，失败则降级不填）
+	currentUserUUID, ok := ctx.Value("user_uuid").(string)
+	if ok && currentUserUUID != "" {
+		for _, item := range resp.Items {
+			if item == nil || item.UUID == "" {
+				continue
+			}
+			friendResp, err := s.userClient.CheckIsFriend(ctx, &userpb.CheckIsFriendRequest{
+				UserUuid: currentUserUUID,
+				PeerUuid: item.UUID,
+			})
+			if err != nil {
+				logger.Warn(ctx, "判断是否好友失败，降级返回",
+					logger.String("peer_uuid", item.UUID),
+					logger.ErrorField("error", err),
+				)
+				continue
+			}
+			item.IsFriend = friendResp.IsFriend
+		}
+	}
+
+	logger.Info(ctx, "搜索用户成功",
+		logger.String("keyword", req.Keyword),
+		logger.Int32("page", req.Page),
+		logger.Int32("page_size", req.PageSize),
+		logger.Duration("duration", time.Since(startTime)),
+	)
+
+	return resp, nil
+}
+
 // UpdateProfile 更新基本信息
 // ctx: 请求上下文
 // req: 更新基本信息请求

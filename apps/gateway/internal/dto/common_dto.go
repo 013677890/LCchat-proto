@@ -21,9 +21,11 @@ type UserInfo struct {
 
 // SimpleUserInfo 简化用户信息 DTO
 type SimpleUserInfo struct {
-	UUID     string `json:"uuid"`     // 用户UUID
-	Nickname string `json:"nickname"` // 昵称
-	Avatar   string `json:"avatar"`   // 头像URL
+	UUID      string `json:"uuid"`      // 用户UUID
+	Nickname  string `json:"nickname"`  // 昵称
+	Avatar    string `json:"avatar"`    // 头像URL
+	Gender    int32  `json:"gender"`    // 性别
+	Signature string `json:"signature"` // 个性签名
 }
 
 // DeviceInfo 设备信息 DTO（通用类型）
@@ -68,9 +70,11 @@ func ConvertSimpleUserInfoFromProto(pb *userpb.SimpleUserInfo) *SimpleUserInfo {
 		return nil
 	}
 	return &SimpleUserInfo{
-		UUID:     pb.Uuid,
-		Nickname: pb.Nickname,
-		Avatar:   pb.Avatar,
+		UUID:      pb.Uuid,
+		Nickname:  pb.Nickname,
+		Avatar:    pb.Avatar,
+		Gender:    pb.Gender,
+		Signature: pb.Signature,
 	}
 }
 

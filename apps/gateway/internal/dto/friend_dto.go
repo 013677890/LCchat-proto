@@ -23,7 +23,6 @@ type SearchUserResponse struct {
 type SimpleUserItem struct {
 	UUID      string `json:"uuid"`      // 用户UUID
 	Nickname  string `json:"nickname"`  // 昵称
-	Email     string `json:"email"`     // 邮箱
 	Avatar    string `json:"avatar"`    // 头像
 	Signature string `json:"signature"` // 个性签名
 	IsFriend  bool   `json:"isFriend"`  // 是否好友
@@ -367,7 +366,6 @@ func ConvertSimpleUserItemFromProto(pb *userpb.SimpleUserItem) *SimpleUserItem {
 	return &SimpleUserItem{
 		UUID:      pb.Uuid,
 		Nickname:  pb.Nickname,
-		Email:     pb.Email,
 		Avatar:    pb.Avatar,
 		Signature: pb.Signature,
 		IsFriend:  pb.IsFriend,
@@ -391,6 +389,9 @@ func ConvertFriendApplyItemFromProto(pb *userpb.FriendApplyItem) *FriendApplyIte
 	}
 
 	applicantInfo := ConvertSimpleUserInfoFromProto(pb.ApplicantInfo)
+	if applicantInfo == nil {
+		applicantInfo = &SimpleUserInfo{}
+	}
 
 	return &FriendApplyItem{
 		ApplyID:           pb.ApplyId,

@@ -183,7 +183,7 @@ func (c *userServiceClientImpl) BatchGetProfile(ctx context.Context, req *userpb
 // SearchUser 搜索用户
 func (c *userServiceClientImpl) SearchUser(ctx context.Context, req *userpb.SearchUserRequest) (*userpb.SearchUserResponse, error) {
 	return ExecuteWithBreaker(c.breaker, "SearchUser", func() (*userpb.SearchUserResponse, error) {
-		return c.friendClient.SearchUser(ctx, req)
+		return c.userClient.SearchUser(ctx, req)
 	})
 }
 

@@ -63,9 +63,6 @@ type AuthService interface {
 // 职责：
 //   - 调用下游用户服务进行好友相关操作
 type FriendService interface {
-	// SearchUserByKeywordAndPageAndSize 搜索用户
-	SearchUserByKeywordAndPageAndSize(ctx context.Context, req *dto.SearchUserRequest) (*dto.SearchUserResponse, error)
-
 	// SendFriendApply 发送好友申请
 	SendFriendApply(ctx context.Context, req *dto.SendFriendApplyRequest) (*dto.SendFriendApplyResponse, error)
 
@@ -115,6 +112,8 @@ type UserService interface {
 	GetProfile(ctx context.Context) (*dto.GetProfileResponse, error)
 	// GetOtherProfile 获取他人信息
 	GetOtherProfile(ctx context.Context, req *dto.GetOtherProfileRequest) (*dto.GetOtherProfileResponse, error)
+	// SearchUser 搜索用户
+	SearchUser(ctx context.Context, req *dto.SearchUserRequest) (*dto.SearchUserResponse, error)
 	// UpdateProfile 更新基本信息
 	UpdateProfile(ctx context.Context, req *dto.UpdateProfileRequest) (*dto.UpdateProfileResponse, error)
 	// UploadAvatar 上传头像
