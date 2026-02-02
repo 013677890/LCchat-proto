@@ -277,6 +277,74 @@ func (r *friendRepositoryImpl) IsFriend(ctx context.Context, userUUID, friendUUI
 	return isFriendFound, nil
 }
 
+// checkFriendCache 检查单侧缓存命中情况
+// 返回值: cacheHit(该用户缓存是否存在), isFriend(是否包含对方)
+func (r *friendRepositoryImpl) checkFriendCache(ctx context.Context, userUUID, friendUUID string) (bool, bool) {
+	if userUUID == "" || friendUUID == "" {
+		return false, false
+	}
+
+	cacheKey := fmt.Sprintf("user:relation:friend:%s", userUUID)
+	pipe := r.redisClient.Pipeline()
+	existsCmd := pipe.Exists(ctx, cacheKey)
+	metaCmd := pipe.HGet(ctx, cacheKey, friendUUID)
+
+	// 概率续期优化：1% 的概率在读取时顺便续期
+	if getRandomBool(0.01) {
+		pipe.Expire(ctx, cacheKey, getRandomExpireTime(24*time.Hour))
+	}
+
+	_, err := pipe.Exec(ctx)
+	if err != nil && err != redis.Nil {
+		if isRedisWrongType(err) {
+			_ = r.redisClient.Del(ctx, cacheKey).Err()
+		} else {
+			LogRedisError(ctx, err)
+		}
+		return false, false
+	}
+
+	if existsCmd.Val() == 0 {
+		return false, false
+	}
+
+	if metaCmd.Err() == nil {
+		_, _ = parseFriendMetaJSON(metaCmd.Val())
+		return true, true
+	}
+	if metaCmd.Err() == redis.Nil {
+		return true, false
+	}
+	if isRedisWrongType(metaCmd.Err()) {
+		_ = r.redisClient.Del(ctx, cacheKey).Err()
+		return false, false
+	}
+
+	LogRedisError(ctx, metaCmd.Err())
+	return false, false
+}
+
+// CheckIsFriendRelation 判断两用户是否存在好友关系（以 userUUID 为准，先查 Redis，未命中再查 DB）
+func (r *friendRepositoryImpl) CheckIsFriendRelation(ctx context.Context, userUUID, peerUUID string) (bool, error) {
+	cacheHit, isFriend := r.checkFriendCache(ctx, userUUID, peerUUID)
+	if cacheHit {
+		return isFriend, nil
+	}
+
+	// 缓存未命中，回源 DB（仅以 userUUID 视角判断）
+	var count int64
+	err := r.db.WithContext(ctx).
+		Model(&model.UserRelation{}).
+		Where("user_uuid = ? AND peer_uuid = ?", userUUID, peerUUID).
+		Where("status = ? AND deleted_at IS NULL", 0).
+		Count(&count).Error
+	if err != nil {
+		return false, WrapDBError(err)
+	}
+
+	return count > 0, nil
+}
+
 // GetRelationStatus 获取关系状态
 func (r *friendRepositoryImpl) GetRelationStatus(ctx context.Context, userUUID, peerUUID string) (*model.UserRelation, error) {
 	return nil, nil // TODO: 获取关系状态

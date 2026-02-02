@@ -136,6 +136,9 @@ type IFriendRepository interface {
 	// IsFriend 检查是否是好友
 	IsFriend(ctx context.Context, userUUID, friendUUID string) (bool, error)
 
+	// CheckIsFriendRelation 判断两用户是否存在好友关系（以 userUUID 为准，先查 Redis，未命中再查 DB）
+	CheckIsFriendRelation(ctx context.Context, userUUID, peerUUID string) (bool, error)
+
 	// BatchCheckIsFriend 批量检查是否为好友（使用Redis Set优化）
 	// 返回：map[peerUUID]isFriend
 	BatchCheckIsFriend(ctx context.Context, userUUID string, peerUUIDs []string) (map[string]bool, error)

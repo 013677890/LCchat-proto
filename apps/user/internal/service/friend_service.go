@@ -809,7 +809,7 @@ func (s *friendServiceImpl) GetTagList(ctx context.Context, req *pb.GetTagListRe
 
 // CheckIsFriend 判断是否好友
 func (s *friendServiceImpl) CheckIsFriend(ctx context.Context, req *pb.CheckIsFriendRequest) (*pb.CheckIsFriendResponse, error) {
-	isFriend, err := s.friendRepo.IsFriend(ctx, req.UserUuid, req.PeerUuid)
+	isFriend, err := s.friendRepo.CheckIsFriendRelation(ctx, req.UserUuid, req.PeerUuid)
 	if err != nil {
 		logger.Error(ctx, "判断是否好友失败",
 			logger.String("user_uuid", req.UserUuid),
