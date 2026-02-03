@@ -127,7 +127,67 @@ func (s *blacklistServiceImpl) RemoveBlacklist(ctx context.Context, req *pb.Remo
 
 // GetBlacklistList 获取黑名单列表
 func (s *blacklistServiceImpl) GetBlacklistList(ctx context.Context, req *pb.GetBlacklistListRequest) (*pb.GetBlacklistListResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "获取黑名单列表功能暂未实现")
+	// 1. 从context中获取当前用户UUID
+	currentUserUUID, ok := ctx.Value("user_uuid").(string)
+	if !ok || currentUserUUID == "" {
+		logger.Error(ctx, "获取用户UUID失败")
+		return nil, status.Error(codes.Unauthenticated, strconv.Itoa(consts.CodeUnauthorized))
+	}
+
+	// 2. 兜底分页参数
+	page := req.Page
+	pageSize := req.PageSize
+	if page <= 0 {
+		page = 1
+	}
+	if pageSize <= 0 {
+		pageSize = 20
+	}
+
+	// 3. 获取黑名单列表
+	relations, total, err := s.blacklistRepo.GetBlacklistList(ctx, currentUserUUID, int(page), int(pageSize))
+	if err != nil {
+		logger.Error(ctx, "获取黑名单列表失败",
+			logger.String("user_uuid", currentUserUUID),
+			logger.Int32("page", page),
+			logger.Int32("page_size", pageSize),
+			logger.ErrorField("error", err),
+		)
+		return nil, status.Error(codes.Internal, strconv.Itoa(consts.CodeInternalError))
+	}
+
+	if len(relations) == 0 {
+		return &pb.GetBlacklistListResponse{
+			Items: []*pb.BlacklistItem{},
+			Pagination: &pb.PaginationInfo{
+				Page:       page,
+				PageSize:   pageSize,
+				Total:      total,
+				TotalPages: int32((total + int64(pageSize) - 1) / int64(pageSize)),
+			},
+		}, nil
+	}
+
+	items := make([]*pb.BlacklistItem, 0, len(relations))
+	for _, relation := range relations {
+		if relation == nil {
+			continue
+		}
+		items = append(items, &pb.BlacklistItem{
+			Uuid:          relation.PeerUuid,
+			BlacklistedAt: relation.UpdatedAt.UnixMilli(),
+		})
+	}
+
+	return &pb.GetBlacklistListResponse{
+		Items: items,
+		Pagination: &pb.PaginationInfo{
+			Page:       page,
+			PageSize:   pageSize,
+			Total:      total,
+			TotalPages: int32((total + int64(pageSize) - 1) / int64(pageSize)),
+		},
+	}, nil
 }
 
 // CheckIsBlacklist 判断是否拉黑

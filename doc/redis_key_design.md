@@ -132,13 +132,13 @@ value JSON 字段示例：
 
 | Key Pattern | 数据类型 | TTL | Repository | 说明 |
 |-------------|----------|-----|------------|------|
-| `user:relation:blacklist:{user_uuid}` | Set | 24h ± 随机抖动<br>空值 5m | `blacklist_repository` | 拉黑 UUID 集合<br>空值占位: `__EMPTY__` |
+| `user:relation:blacklist:{user_uuid}` | ZSet | 24h ± 随机抖动<br>空值 5m | `blacklist_repository` | 拉黑 UUID 集合(score=拉黑时间ms)<br>空值占位: `__EMPTY__` |
 
 #### 操作函数
 
 | 函数 | 操作 | Key | 说明 |
 |------|------|-----|------|
-| `IsBlocked()` | Pipeline EXISTS + SISMEMBER | `blacklist:*` | 检查是否拉黑 |
+| `IsBlocked()` | Pipeline EXISTS + ZSCORE | `blacklist:*` | 检查是否拉黑 |
 
 ---
 

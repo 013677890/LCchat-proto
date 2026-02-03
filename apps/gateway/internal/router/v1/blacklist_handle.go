@@ -97,3 +97,46 @@ func (h *BlacklistHandler) RemoveBlacklist(c *gin.Context) {
 
 	result.Success(c, resp)
 }
+
+// GetBlacklistList 获取黑名单列表接口
+// @Summary 获取黑名单列表
+// @Description 获取所有被拉黑的用户
+// @Tags 黑名单接口
+// @Accept json
+// @Produce json
+// @Param page query int false "页码(默认1)"
+// @Param pageSize query int false "每页数量(默认20)"
+// @Success 200 {object} dto.GetBlacklistListResponse
+// @Router /api/v1/auth/blacklist [get]
+func (h *BlacklistHandler) GetBlacklistList(c *gin.Context) {
+	ctx := middleware.NewContextWithGin(c)
+
+	var req dto.GetBlacklistListRequest
+	if err := c.ShouldBindQuery(&req); err != nil {
+		result.Fail(c, nil, consts.CodeParamError)
+		return
+	}
+
+	if req.Page == 0 {
+		req.Page = 1
+	}
+	if req.PageSize == 0 {
+		req.PageSize = 20
+	}
+
+	resp, err := h.blacklistService.GetBlacklistList(ctx, &req)
+	if err != nil {
+		if consts.IsNonServerError(utils.ExtractErrorCode(err)) {
+			result.Fail(c, nil, utils.ExtractErrorCode(err))
+			return
+		}
+
+		logger.Error(ctx, "获取黑名单列表服务内部错误",
+			logger.ErrorField("error", err),
+		)
+		result.Fail(c, nil, consts.CodeInternalError)
+		return
+	}
+
+	result.Success(c, resp)
+}

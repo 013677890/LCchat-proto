@@ -77,7 +77,7 @@ func (r *blacklistRepositoryImpl) AddBlacklist(ctx context.Context, userUUID, ta
 	}
 
 	// 异步更新黑名单缓存（仅更新当前用户侧）
-	r.updateBlacklistCacheAsync(ctx, userUUID, targetUUID)
+	r.updateBlacklistCacheAsync(ctx, userUUID, targetUUID, now.UnixMilli())
 
 	return nil
 }
@@ -137,7 +137,115 @@ func (r *blacklistRepositoryImpl) RemoveBlacklist(ctx context.Context, userUUID,
 
 // GetBlacklistList 获取黑名单列表
 func (r *blacklistRepositoryImpl) GetBlacklistList(ctx context.Context, userUUID string, page, pageSize int) ([]*model.UserRelation, int64, error) {
-	return nil, 0, nil // TODO: 获取黑名单列表
+	// 兜底分页参数
+	if page <= 0 {
+		page = 1
+	}
+	if pageSize <= 0 {
+		pageSize = 20
+	}
+
+	offset := (page - 1) * pageSize
+
+	cacheKey := fmt.Sprintf("user:relation:blacklist:%s", userUUID)
+	offset := (page - 1) * pageSize
+
+	// ==================== 1. 尝试从 Redis ZSet 获取 ====================
+	pipe := r.redisClient.Pipeline()
+	existsCmd := pipe.Exists(ctx, cacheKey)
+	countCmd := pipe.ZCard(ctx, cacheKey)
+	rangeCmd := pipe.ZRevRangeWithScores(ctx, cacheKey, int64(offset), int64(offset+pageSize-1))
+	emptyScoreCmd := pipe.ZScore(ctx, cacheKey, "__EMPTY__")
+	if getRandomBool(0.01) {
+		pipe.Expire(ctx, cacheKey, getRandomExpireTime(24*time.Hour))
+	}
+
+	_, err := pipe.Exec(ctx)
+	if err == nil {
+		if existsCmd.Val() > 0 {
+			total := countCmd.Val()
+			zs := rangeCmd.Val()
+			if total == 1 && emptyScoreCmd.Err() == nil {
+				return []*model.UserRelation{}, 0, nil
+			}
+
+			relations := make([]*model.UserRelation, 0, len(zs))
+			for _, z := range zs {
+				member, ok := z.Member.(string)
+				if !ok || member == "" || member == "__EMPTY__" {
+					continue
+				}
+				relations = append(relations, &model.UserRelation{
+					UserUuid: userUUID,
+					PeerUuid: member,
+					Status:   1,
+					UpdatedAt: time.UnixMilli(int64(z.Score)),
+				})
+			}
+
+			return relations, total, nil
+		}
+	} else if err != redis.Nil {
+		if isRedisWrongType(err) {
+			_ = r.redisClient.Del(ctx, cacheKey).Err()
+		} else {
+			LogRedisError(ctx, err)
+		}
+	}
+
+	// ==================== 2. 缓存未命中，回源 DB ====================
+	query := r.db.WithContext(ctx).
+		Model(&model.UserRelation{}).
+		Where("user_uuid = ? AND status IN ? AND deleted_at IS NULL", userUUID, []int{1, 3})
+
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, WrapDBError(err)
+	}
+
+	var relations []*model.UserRelation
+	if err := query.
+		Order("updated_at DESC, id DESC").
+		Offset(offset).
+		Limit(pageSize).
+		Find(&relations).
+		Error; err != nil {
+		return nil, 0, WrapDBError(err)
+	}
+
+	// ==================== 3. 回填缓存（异步） ====================
+	async.RunSafe(ctx, func(runCtx context.Context) {
+		pipe := r.redisClient.Pipeline()
+		pipe.Del(runCtx, cacheKey)
+		if total == 0 {
+			pipe.ZAdd(runCtx, cacheKey, redis.Z{Score: 0, Member: "__EMPTY__"})
+			pipe.Expire(runCtx, cacheKey, 5*time.Minute)
+		} else {
+			members := make([]redis.Z, 0, len(relations))
+			for _, relation := range relations {
+				if relation == nil || relation.PeerUuid == "" {
+					continue
+				}
+				members = append(members, redis.Z{
+					Score:  float64(relation.UpdatedAt.UnixMilli()),
+					Member: relation.PeerUuid,
+				})
+			}
+			if len(members) > 0 {
+				pipe.ZAdd(runCtx, cacheKey, members...)
+			}
+			pipe.Expire(runCtx, cacheKey, getRandomExpireTime(24*time.Hour))
+		}
+		if _, err := pipe.Exec(runCtx); err != nil && err != redis.Nil {
+			if isRedisWrongType(err) {
+				_ = r.redisClient.Del(runCtx, cacheKey).Err()
+				return
+			}
+			LogRedisError(runCtx, err)
+		}
+	}, 0)
+
+	return relations, total, nil
 }
 
 // IsBlocked 检查是否被拉黑
@@ -153,7 +261,7 @@ func (r *blacklistRepositoryImpl) IsBlocked(ctx context.Context, userUUID, targe
 	// 命令1: 检查 Key 是否存在 (区分缓存命中/未命中)
 	existsCmd := pipe.Exists(ctx, cacheKey)
 	// 命令2: 检查是否已拉黑 (只有 Key 存在时此结果才有效)
-	isMemberCmd := pipe.SIsMember(ctx, cacheKey, targetUUID)
+	scoreCmd := pipe.ZScore(ctx, cacheKey, targetUUID)
 
 	// 概率续期优化：1% 的概率在读取时顺便续期
 	// 无论 Key 是否存在，Expire 都是安全的 (不存在则返回0)
@@ -171,9 +279,18 @@ func (r *blacklistRepositoryImpl) IsBlocked(ctx context.Context, userUUID, targe
 		// 核心逻辑：先看 Key 在不在
 		if existsCmd.Val() > 0 {
 			// Case A: 缓存命中 (Hit)
-			// 此时 Redis 是权威的。SIsMember 说 false 就是 false (绝对未拉黑)。
-			// 注意：哪怕 Set 里只有 "__EMPTY__"，SIsMember 也会正确返回 false。
-			return isMemberCmd.Val(), nil
+			// 此时 Redis 是权威的。ZSCORE 找不到则为未拉黑。
+			if scoreCmd.Err() == nil {
+				return true, nil
+			}
+			if scoreCmd.Err() == redis.Nil {
+				return false, nil
+			}
+			if isRedisWrongType(scoreCmd.Err()) {
+				_ = r.redisClient.Del(ctx, cacheKey).Err()
+			} else {
+				LogRedisError(ctx, scoreCmd.Err())
+			}
 		}
 		// Case B: 缓存未命中 (Miss) -> Exists 返回 0
 		// 代码继续往下走，去查数据库
@@ -193,7 +310,7 @@ func (r *blacklistRepositoryImpl) IsBlocked(ctx context.Context, userUUID, targe
 			async.RunSafe(ctx, func(runCtx context.Context) {
 				pipe := r.redisClient.Pipeline()
 				pipe.Del(runCtx, cacheKey)
-				pipe.SAdd(runCtx, cacheKey, "__EMPTY__")
+				pipe.ZAdd(runCtx, cacheKey, redis.Z{Score: 0, Member: "__EMPTY__"})
 				pipe.Expire(runCtx, cacheKey, 5*time.Minute)
 				if _, err := pipe.Exec(runCtx); err != nil {
 					LogRedisError(runCtx, err)
@@ -211,7 +328,7 @@ func (r *blacklistRepositoryImpl) IsBlocked(ctx context.Context, userUUID, targe
 	async.RunSafe(ctx, func(runCtx context.Context) {
 		pipe := r.redisClient.Pipeline()
 		pipe.Del(runCtx, cacheKey)
-		pipe.SAdd(runCtx, cacheKey, targetUUID)
+		pipe.ZAdd(runCtx, cacheKey, redis.Z{Score: float64(relation.UpdatedAt.UnixMilli()), Member: targetUUID})
 		pipe.Expire(runCtx, cacheKey, getRandomExpireTime(24*time.Hour))
 		if _, err := pipe.Exec(runCtx); err != nil {
 			LogRedisError(runCtx, err)
@@ -228,7 +345,7 @@ func (r *blacklistRepositoryImpl) GetBlacklistRelation(ctx context.Context, user
 
 // updateBlacklistCacheAsync 异步更新黑名单缓存（单向）
 // 仅在缓存存在时做增量更新，避免过期后写入不完整 Set
-func (r *blacklistRepositoryImpl) updateBlacklistCacheAsync(ctx context.Context, userUUID, targetUUID string) {
+func (r *blacklistRepositoryImpl) updateBlacklistCacheAsync(ctx context.Context, userUUID, targetUUID string, blockedAt int64) {
 	if userUUID == "" || targetUUID == "" {
 		return
 	}
@@ -239,6 +356,7 @@ func (r *blacklistRepositoryImpl) updateBlacklistCacheAsync(ctx context.Context,
 		expireSeconds := int(getRandomExpireTime(24 * time.Hour).Seconds())
 		_, err := luaScript.Run(runCtx, r.redisClient,
 			[]string{cacheKey},
+			blockedAt,
 			targetUUID,
 			expireSeconds,
 		).Result()
