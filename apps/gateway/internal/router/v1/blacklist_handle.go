@@ -58,3 +58,42 @@ func (h *BlacklistHandler) AddBlacklist(c *gin.Context) {
 
 	result.Success(c, resp)
 }
+
+// RemoveBlacklist 取消拉黑接口
+// @Summary 取消拉黑
+// @Description 将用户移出黑名单
+// @Tags 黑名单接口
+// @Accept json
+// @Produce json
+// @Param userUuid path string true "用户UUID"
+// @Success 200 {object} dto.RemoveBlacklistResponse
+// @Router /api/v1/auth/blacklist/{userUuid} [delete]
+func (h *BlacklistHandler) RemoveBlacklist(c *gin.Context) {
+	ctx := middleware.NewContextWithGin(c)
+
+	userUuid := c.Param("userUuid")
+	if userUuid == "" {
+		result.Fail(c, nil, consts.CodeParamError)
+		return
+	}
+
+	req := &dto.RemoveBlacklistRequest{
+		UserUUID: userUuid,
+	}
+
+	resp, err := h.blacklistService.RemoveBlacklist(ctx, req)
+	if err != nil {
+		if consts.IsNonServerError(utils.ExtractErrorCode(err)) {
+			result.Fail(c, nil, utils.ExtractErrorCode(err))
+			return
+		}
+
+		logger.Error(ctx, "取消拉黑服务内部错误",
+			logger.ErrorField("error", err),
+		)
+		result.Fail(c, nil, consts.CodeInternalError)
+		return
+	}
+
+	result.Success(c, resp)
+}

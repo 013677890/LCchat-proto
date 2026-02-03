@@ -129,6 +129,7 @@ func InitRouter(authHandler *v1.AuthHandler, userHandler *v1.UserHandler, friend
 			blacklist := auth.Group("/blacklist")
 			{
 				blacklist.POST("", blacklistHandler.AddBlacklist)
+				blacklist.DELETE("/:userUuid", blacklistHandler.RemoveBlacklist)
 			}
 		}
 	}

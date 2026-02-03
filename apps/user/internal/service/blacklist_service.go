@@ -6,6 +6,7 @@ import (
 	"ChatServer/consts"
 	"ChatServer/pkg/logger"
 	"context"
+	"errors"
 	"strconv"
 
 	"google.golang.org/grpc/codes"
@@ -77,7 +78,51 @@ func (s *blacklistServiceImpl) AddBlacklist(ctx context.Context, req *pb.AddBlac
 
 // RemoveBlacklist 取消拉黑
 func (s *blacklistServiceImpl) RemoveBlacklist(ctx context.Context, req *pb.RemoveBlacklistRequest) error {
-	return status.Error(codes.Unimplemented, "取消拉黑功能暂未实现")
+	// 1. 从context中获取当前用户UUID
+	currentUserUUID, ok := ctx.Value("user_uuid").(string)
+	if !ok || currentUserUUID == "" {
+		logger.Error(ctx, "获取用户UUID失败")
+		return status.Error(codes.Unauthenticated, strconv.Itoa(consts.CodeUnauthorized))
+	}
+
+	// 2. 参数校验
+	if req == nil || req.UserUuid == "" {
+		return status.Error(codes.InvalidArgument, strconv.Itoa(consts.CodeParamError))
+	}
+
+	// 3. 判断是否已在黑名单中
+	isBlocked, err := s.blacklistRepo.IsBlocked(ctx, currentUserUUID, req.UserUuid)
+	if err != nil {
+		logger.Error(ctx, "检查黑名单失败",
+			logger.String("user_uuid", currentUserUUID),
+			logger.String("target_uuid", req.UserUuid),
+			logger.ErrorField("error", err),
+		)
+		return status.Error(codes.Internal, strconv.Itoa(consts.CodeInternalError))
+	}
+	if !isBlocked {
+		return status.Error(codes.NotFound, strconv.Itoa(consts.CodeNotInBlacklist))
+	}
+
+	// 4. 取消拉黑
+	if err := s.blacklistRepo.RemoveBlacklist(ctx, currentUserUUID, req.UserUuid); err != nil {
+		if errors.Is(err, repository.ErrRecordNotFound) {
+			return status.Error(codes.NotFound, strconv.Itoa(consts.CodeNotInBlacklist))
+		}
+		logger.Error(ctx, "取消拉黑失败",
+			logger.String("user_uuid", currentUserUUID),
+			logger.String("target_uuid", req.UserUuid),
+			logger.ErrorField("error", err),
+		)
+		return status.Error(codes.Internal, strconv.Itoa(consts.CodeInternalError))
+	}
+
+	logger.Info(ctx, "取消拉黑成功",
+		logger.String("user_uuid", currentUserUUID),
+		logger.String("target_uuid", req.UserUuid),
+	)
+
+	return nil
 }
 
 // GetBlacklistList 获取黑名单列表

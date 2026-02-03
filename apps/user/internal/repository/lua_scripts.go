@@ -99,4 +99,22 @@ if redis.call('EXISTS', KEYS[1]) == 1 then
 end
 return 0
 `
+
+	// luaRemoveBlacklistIfExists 黑名单移除（仅在 key 存在时增量更新）
+	// KEYS[1]: 黑名单 Set
+	// ARGV[1]: member(target_uuid)
+	// ARGV[2]: 过期时间（秒）
+	// 返回: 1 表示执行成功，0 表示 key 不存在
+	luaRemoveBlacklistIfExists = `
+if redis.call('EXISTS', KEYS[1]) == 1 then
+	redis.call('SREM', KEYS[1], ARGV[1])
+	redis.call('SREM', KEYS[1], '__EMPTY__')
+	if redis.call('SCARD', KEYS[1]) == 0 then
+		redis.call('SADD', KEYS[1], '__EMPTY__')
+	end
+	redis.call('EXPIRE', KEYS[1], ARGV[2])
+	return 1
+end
+return 0
+`
 )

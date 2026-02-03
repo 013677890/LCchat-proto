@@ -84,7 +84,55 @@ func (r *blacklistRepositoryImpl) AddBlacklist(ctx context.Context, userUUID, ta
 
 // RemoveBlacklist 取消拉黑
 func (r *blacklistRepositoryImpl) RemoveBlacklist(ctx context.Context, userUUID, targetUUID string) error {
-	return nil // TODO: 取消拉黑
+	if userUUID == "" || targetUUID == "" {
+		return ErrRecordNotFound
+	}
+
+	var relation model.UserRelation
+	err := r.db.WithContext(ctx).
+		Unscoped().
+		Select("status").
+		Where("user_uuid = ? AND peer_uuid = ? AND status IN ?", userUUID, targetUUID, []int{1, 3}).
+		First(&relation).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrRecordNotFound
+		}
+		return WrapDBError(err)
+	}
+
+	now := time.Now()
+	updates := map[string]interface{}{
+		"updated_at": now,
+	}
+
+	if relation.Status == 1 {
+		// 原先为好友：恢复好友关系
+		updates["status"] = 0
+		updates["deleted_at"] = nil
+	} else {
+		// 原先非好友：恢复为删除状态
+		updates["status"] = 2
+		updates["deleted_at"] = gorm.DeletedAt{Time: now, Valid: true}
+	}
+
+	result := r.db.WithContext(ctx).
+		Unscoped().
+		Model(&model.UserRelation{}).
+		Where("user_uuid = ? AND peer_uuid = ?", userUUID, targetUUID).
+		Updates(updates)
+
+	if result.Error != nil {
+		return WrapDBError(result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return ErrRecordNotFound
+	}
+
+	// 异步更新黑名单缓存（仅更新当前用户侧）
+	r.removeBlacklistCacheAsync(ctx, userUUID, targetUUID)
+
+	return nil
 }
 
 // GetBlacklistList 获取黑名单列表
@@ -188,6 +236,33 @@ func (r *blacklistRepositoryImpl) updateBlacklistCacheAsync(ctx context.Context,
 	cacheKey := fmt.Sprintf("user:relation:blacklist:%s", userUUID)
 	async.RunSafe(ctx, func(runCtx context.Context) {
 		luaScript := redis.NewScript(luaAddBlacklistIfExists)
+		expireSeconds := int(getRandomExpireTime(24 * time.Hour).Seconds())
+		_, err := luaScript.Run(runCtx, r.redisClient,
+			[]string{cacheKey},
+			targetUUID,
+			expireSeconds,
+		).Result()
+
+		if err != nil && err != redis.Nil {
+			if isRedisWrongType(err) {
+				_ = r.redisClient.Del(runCtx, cacheKey).Err()
+				return
+			}
+			LogRedisError(runCtx, err)
+		}
+	}, 0)
+}
+
+// removeBlacklistCacheAsync 异步移除黑名单缓存（单向）
+// 仅在缓存存在时做增量更新，避免过期后写入不完整 Set
+func (r *blacklistRepositoryImpl) removeBlacklistCacheAsync(ctx context.Context, userUUID, targetUUID string) {
+	if userUUID == "" || targetUUID == "" {
+		return
+	}
+
+	cacheKey := fmt.Sprintf("user:relation:blacklist:%s", userUUID)
+	async.RunSafe(ctx, func(runCtx context.Context) {
+		luaScript := redis.NewScript(luaRemoveBlacklistIfExists)
 		expireSeconds := int(getRandomExpireTime(24 * time.Hour).Seconds())
 		_, err := luaScript.Run(runCtx, r.redisClient,
 			[]string{cacheKey},
