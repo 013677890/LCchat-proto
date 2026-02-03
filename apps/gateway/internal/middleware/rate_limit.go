@@ -1,11 +1,11 @@
 package middleware
 
 import (
+	"ChatServer/consts/redisKey"
 	"ChatServer/pkg/logger"
 	pkgredis "ChatServer/pkg/redis"
 	"context"
 	"errors"
-	"fmt"
 	"net/http"
 	"sync"
 	"time"
@@ -299,7 +299,7 @@ func IPRateLimitMiddleware(blacklistKey string, rate float64, burst int) gin.Han
 		}
 
 		// 构造限流 key: rate:limit:ip:{ip}
-		rateLimitKey := fmt.Sprintf("rate:limit:ip:%s", ip)
+		rateLimitKey := rediskey.GatewayIPRateLimitKey(ip)
 
 		// 检查是否允许通过
 		allowed, err := globalRedisLimiter.Allow(ctx, rateLimitKey)
@@ -373,7 +373,7 @@ func UserRateLimitMiddleware(rate float64, burst int) gin.HandlerFunc {
 		}
 
 		// 3. 构造用户限流 key: gateway:rate:limit:user:{user_uuid}
-		rateLimitKey := fmt.Sprintf("gateway:rate:limit:user:%s", userUUID)
+		rateLimitKey := rediskey.GatewayUserRateLimitKey(userUUID)
 
 		// 4. 检查是否允许通过
 		allowed, err := globalRedisLimiter.Allow(ctx, rateLimitKey)
@@ -444,7 +444,7 @@ func UserRateLimitMiddlewareWithConfig(rate float64, burst int) gin.HandlerFunc 
 		}
 
 		// 2. 构造用户限流 key: gateway:rate:limit:user:{user_uuid}
-		rateLimitKey := fmt.Sprintf("gateway:rate:limit:user:%s", userUUID)
+		rateLimitKey := rediskey.GatewayUserRateLimitKey(userUUID)
 
 		// 3. 检查是否允许通过
 		allowed, err := limiter.Allow(ctx, rateLimitKey)
@@ -541,7 +541,7 @@ func IPRateLimitMiddlewareWithConfig(blacklistKey string, rate float64, burst in
 		// limiter.RedisSetClient(pkgredis.Client())
 
 		// 构造限流 key: rate:limit:ip:{ip}
-		rateLimitKey := fmt.Sprintf("rate:limit:ip:%s", ip)
+		rateLimitKey := rediskey.GatewayIPRateLimitKey(ip)
 
 		// 检查是否允许通过
 		allowed, err := limiter.Allow(ctx, rateLimitKey)

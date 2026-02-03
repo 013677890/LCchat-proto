@@ -1,11 +1,11 @@
 package repository
 
 import (
+	"ChatServer/consts/redisKey"
 	"ChatServer/model"
 	"ChatServer/pkg/async"
 	"context"
 	"errors"
-	"fmt"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -205,7 +205,7 @@ func (r *friendRepositoryImpl) GetTagList(ctx context.Context, userUUID string) 
 // IsFriend 检查是否是好友
 // 采用 Cache-Aside Pattern：优先查 Redis Hash，未命中则回源 MySQL 并缓存
 func (r *friendRepositoryImpl) IsFriend(ctx context.Context, userUUID, friendUUID string) (bool, error) {
-	cacheKey := fmt.Sprintf("user:relation:friend:%s", userUUID)
+	cacheKey := rediskey.FriendRelationKey(userUUID)
 
 	// ==================== 1. 组合查询 Redis (Pipeline) ====================
 	// 使用 Pipeline 一次性发送命令，减少网络 RTT
@@ -219,7 +219,7 @@ func (r *friendRepositoryImpl) IsFriend(ctx context.Context, userUUID, friendUUI
 	// 概率续期优化：1% 的概率在读取时顺便续期
 	// 无论 Key 是否存在，Expire 都是安全的 (不存在则返回0)
 	if getRandomBool(0.01) {
-		pipe.Expire(ctx, cacheKey, getRandomExpireTime(24*time.Hour))
+		pipe.Expire(ctx, cacheKey, getRandomExpireTime(rediskey.FriendRelationTTL))
 	}
 
 	_, err := pipe.Exec(ctx)
@@ -285,14 +285,14 @@ func (r *friendRepositoryImpl) checkFriendCache(ctx context.Context, userUUID, f
 		return false, false
 	}
 
-	cacheKey := fmt.Sprintf("user:relation:friend:%s", userUUID)
+	cacheKey := rediskey.FriendRelationKey(userUUID)
 	pipe := r.redisClient.Pipeline()
 	existsCmd := pipe.Exists(ctx, cacheKey)
 	metaCmd := pipe.HGet(ctx, cacheKey, friendUUID)
 
 	// 概率续期优化：1% 的概率在读取时顺便续期
 	if getRandomBool(0.01) {
-		pipe.Expire(ctx, cacheKey, getRandomExpireTime(24*time.Hour))
+		pipe.Expire(ctx, cacheKey, getRandomExpireTime(rediskey.FriendRelationTTL))
 	}
 
 	_, err := pipe.Exec(ctx)
@@ -332,14 +332,14 @@ func (r *friendRepositoryImpl) getFriendMetaCache(ctx context.Context, userUUID,
 		return false, nil, false
 	}
 
-	cacheKey := fmt.Sprintf("user:relation:friend:%s", userUUID)
+	cacheKey := rediskey.FriendRelationKey(userUUID)
 	pipe := r.redisClient.Pipeline()
 	existsCmd := pipe.Exists(ctx, cacheKey)
 	metaCmd := pipe.HGet(ctx, cacheKey, friendUUID)
 
 	// 概率续期优化：1% 的概率在读取时顺便续期
 	if getRandomBool(0.01) {
-		pipe.Expire(ctx, cacheKey, getRandomExpireTime(24*time.Hour))
+		pipe.Expire(ctx, cacheKey, getRandomExpireTime(rediskey.FriendRelationTTL))
 	}
 
 	_, err := pipe.Exec(ctx)
@@ -382,14 +382,14 @@ func (r *friendRepositoryImpl) checkBlacklistCache(ctx context.Context, userUUID
 		return false, false
 	}
 
-	cacheKey := fmt.Sprintf("user:relation:blacklist:%s", userUUID)
+	cacheKey := rediskey.BlacklistRelationKey(userUUID)
 	pipe := r.redisClient.Pipeline()
 	existsCmd := pipe.Exists(ctx, cacheKey)
 	memberCmd := pipe.SIsMember(ctx, cacheKey, peerUUID)
 
 	// 概率续期优化：1% 的概率在读取时顺便续期
 	if getRandomBool(0.01) {
-		pipe.Expire(ctx, cacheKey, getRandomExpireTime(24*time.Hour))
+		pipe.Expire(ctx, cacheKey, getRandomExpireTime(rediskey.BlacklistTTL))
 	}
 
 	_, err := pipe.Exec(ctx)
@@ -553,7 +553,7 @@ func (r *friendRepositoryImpl) BatchCheckIsFriend(ctx context.Context, userUUID 
 	}
 
 	// 构建 Redis Hash key
-	cacheKey := fmt.Sprintf("user:relation:friend:%s", userUUID)
+	cacheKey := rediskey.FriendRelationKey(userUUID)
 
 	// ==================== 1. 组合查询 Redis (Pipeline) ====================
 	pipe := r.redisClient.Pipeline()
@@ -567,7 +567,7 @@ func (r *friendRepositoryImpl) BatchCheckIsFriend(ctx context.Context, userUUID 
 	// 概率续期优化：1% 的概率在读取时顺便续期
 	// 无论 Key 是否存在，Expire 都是安全的 (不存在则返回0)
 	if getRandomBool(0.01) {
-		pipe.Expire(ctx, cacheKey, getRandomExpireTime(24*time.Hour))
+		pipe.Expire(ctx, cacheKey, getRandomExpireTime(rediskey.FriendRelationTTL))
 	}
 
 	_, err := pipe.Exec(ctx)
@@ -646,11 +646,11 @@ func (r *friendRepositoryImpl) BatchCheckIsFriend(ctx context.Context, userUUID 
 func (r *friendRepositoryImpl) invalidateFriendCacheAsync(ctx context.Context, userUUID, friendUUID string) {
 	async.RunSafe(ctx, func(runCtx context.Context) {
 		pairs := []struct{ userKey, newFriend string }{
-			{fmt.Sprintf("user:relation:friend:%s", userUUID), friendUUID},
-			{fmt.Sprintf("user:relation:friend:%s", friendUUID), userUUID},
+			{rediskey.FriendRelationKey(userUUID), friendUUID},
+			{rediskey.FriendRelationKey(friendUUID), userUUID},
 		}
 		metaJSON := buildFriendMetaJSON("", "", "", time.Now().UnixMilli())
-		expireSeconds := int(getRandomExpireTime(24 * time.Hour).Seconds())
+		expireSeconds := int(getRandomExpireTime(rediskey.FriendRelationTTL).Seconds())
 		luaScript := redis.NewScript(luaInsertFriendMetaIfExists)
 
 		for _, pair := range pairs {
@@ -674,12 +674,12 @@ func (r *friendRepositoryImpl) invalidateFriendCacheAsync(ctx context.Context, u
 // removeFriendCacheAsync 异步删除好友缓存（单向）
 // 仅在缓存存在时做增量更新，避免过期后写入不完整 Hash
 func (r *friendRepositoryImpl) removeFriendCacheAsync(ctx context.Context, userUUID, friendUUID string) {
-	cacheKey := fmt.Sprintf("user:relation:friend:%s", userUUID)
+	cacheKey := rediskey.FriendRelationKey(userUUID)
 
 	async.RunSafe(ctx, func(runCtx context.Context) {
 		luaScript := redis.NewScript(luaRemoveFriendMetaIfExists)
 		placeholderJSON := buildFriendMetaJSON("", "", "", 0)
-		expireSeconds := int(getRandomExpireTime(24 * time.Hour).Seconds())
+		expireSeconds := int(getRandomExpireTime(rediskey.FriendRelationTTL).Seconds())
 		_, err := luaScript.Run(runCtx, r.redisClient,
 			[]string{cacheKey},
 			friendUUID,
@@ -699,14 +699,14 @@ func (r *friendRepositoryImpl) removeFriendCacheAsync(ctx context.Context, userU
 
 // rebuildFriendCacheAsync 异步重建好友关系缓存（Hash）
 func (r *friendRepositoryImpl) rebuildFriendCacheAsync(ctx context.Context, userUUID string, relations []model.UserRelation) {
-	cacheKey := fmt.Sprintf("user:relation:friend:%s", userUUID)
+	cacheKey := rediskey.FriendRelationKey(userUUID)
 	async.RunSafe(ctx, func(runCtx context.Context) {
 		pipe := r.redisClient.Pipeline()
 		pipe.Del(runCtx, cacheKey)
 
 		if len(relations) == 0 {
 			pipe.HSet(runCtx, cacheKey, "__EMPTY__", buildFriendMetaJSON("", "", "", 0))
-			pipe.Expire(runCtx, cacheKey, 5*time.Minute)
+			pipe.Expire(runCtx, cacheKey, rediskey.FriendRelationEmptyTTL)
 		} else {
 			fields := make(map[string]interface{}, len(relations))
 			for _, relation := range relations {
@@ -723,7 +723,7 @@ func (r *friendRepositoryImpl) rebuildFriendCacheAsync(ctx context.Context, user
 			if len(fields) > 0 {
 				pipe.HSet(runCtx, cacheKey, fields)
 			}
-			pipe.Expire(runCtx, cacheKey, getRandomExpireTime(24*time.Hour))
+			pipe.Expire(runCtx, cacheKey, getRandomExpireTime(rediskey.FriendRelationTTL))
 		}
 
 		if _, err := pipe.Exec(runCtx); err != nil && err != redis.Nil {
@@ -741,7 +741,7 @@ func (r *friendRepositoryImpl) updateFriendMetaCacheAsync(ctx context.Context, u
 	if relation == nil || relation.PeerUuid == "" {
 		return
 	}
-	cacheKey := fmt.Sprintf("user:relation:friend:%s", userUUID)
+	cacheKey := rediskey.FriendRelationKey(userUUID)
 	async.RunSafe(ctx, func(runCtx context.Context) {
 		metaJSON := buildFriendMetaJSON(
 			relation.Remark,
@@ -749,7 +749,7 @@ func (r *friendRepositoryImpl) updateFriendMetaCacheAsync(ctx context.Context, u
 			relation.Source,
 			relation.UpdatedAt.UnixMilli(),
 		)
-		expireSeconds := int(getRandomExpireTime(24 * time.Hour).Seconds())
+		expireSeconds := int(getRandomExpireTime(rediskey.FriendRelationTTL).Seconds())
 		luaScript := redis.NewScript(luaUpsertFriendMetaIfExists)
 		_, err := luaScript.Run(runCtx, r.redisClient,
 			[]string{cacheKey},
@@ -774,7 +774,7 @@ func (r *friendRepositoryImpl) updateFriendRemarkCacheAsync(ctx context.Context,
 		return
 	}
 
-	cacheKey := fmt.Sprintf("user:relation:friend:%s", userUUID)
+	cacheKey := rediskey.FriendRelationKey(userUUID)
 	async.RunSafe(ctx, func(runCtx context.Context) {
 		pipe := r.redisClient.Pipeline()
 		existsCmd := pipe.Exists(runCtx, cacheKey)
@@ -802,7 +802,7 @@ func (r *friendRepositoryImpl) updateFriendRemarkCacheAsync(ctx context.Context,
 			meta.Remark = remark
 			meta.UpdatedAt = updatedAt
 			metaJSON := buildFriendMetaJSON(meta.Remark, meta.GroupTag, meta.Source, meta.UpdatedAt)
-			expireSeconds := int(getRandomExpireTime(24 * time.Hour).Seconds())
+			expireSeconds := int(getRandomExpireTime(rediskey.FriendRelationTTL).Seconds())
 			luaScript := redis.NewScript(luaUpsertFriendMetaIfExists)
 			_, err = luaScript.Run(runCtx, r.redisClient,
 				[]string{cacheKey},
@@ -849,7 +849,7 @@ func (r *friendRepositoryImpl) updateFriendTagCacheAsync(ctx context.Context, us
 		return
 	}
 
-	cacheKey := fmt.Sprintf("user:relation:friend:%s", userUUID)
+	cacheKey := rediskey.FriendRelationKey(userUUID)
 	async.RunSafe(ctx, func(runCtx context.Context) {
 		pipe := r.redisClient.Pipeline()
 		existsCmd := pipe.Exists(runCtx, cacheKey)
@@ -877,7 +877,7 @@ func (r *friendRepositoryImpl) updateFriendTagCacheAsync(ctx context.Context, us
 			meta.GroupTag = groupTag
 			meta.UpdatedAt = updatedAt
 			metaJSON := buildFriendMetaJSON(meta.Remark, meta.GroupTag, meta.Source, meta.UpdatedAt)
-			expireSeconds := int(getRandomExpireTime(24 * time.Hour).Seconds())
+			expireSeconds := int(getRandomExpireTime(rediskey.FriendRelationTTL).Seconds())
 			luaScript := redis.NewScript(luaUpsertFriendMetaIfExists)
 			_, err = luaScript.Run(runCtx, r.redisClient,
 				[]string{cacheKey},

@@ -2,12 +2,12 @@ package repository
 
 import (
 	"ChatServer/apps/user/mq"
+	"ChatServer/consts/redisKey"
 	"ChatServer/model"
 	"ChatServer/pkg/async"
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"math/rand"
 	"strings"
 	"time"
@@ -30,7 +30,7 @@ func NewUserRepository(db *gorm.DB, redisClient *redis.Client) IUserRepository {
 // GetByUUID 根据UUID查询用户信息
 func (r *userRepositoryImpl) GetByUUID(ctx context.Context, uuid string) (*model.UserInfo, error) {
 	// ==================== 1. 先从 Redis 缓存中查询 ====================
-	cacheKey := fmt.Sprintf("user:info:%s", uuid)
+	cacheKey := rediskey.UserInfoKey(uuid)
 	cachedData, err := r.redisClient.Get(ctx, cacheKey).Result()
 	if err == nil {
 		// 缓存命中，反序列化返回
@@ -53,7 +53,7 @@ func (r *userRepositoryImpl) GetByUUID(ctx context.Context, uuid string) (*model
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			// 存一份空到redis 5min过期
-			randomDuration := getRandomExpireTime(5 * time.Minute)
+			randomDuration := getRandomExpireTime(rediskey.UserInfoEmptyTTL)
 			async.RunSafe(ctx, func(runCtx context.Context) {
 				if err := r.redisClient.Set(runCtx, cacheKey, "{}", randomDuration).Err(); err != nil {
 					LogRedisError(runCtx, err)
@@ -76,7 +76,7 @@ func (r *userRepositoryImpl) GetByUUID(ctx context.Context, uuid string) (*model
 	// 存入缓存，设置过期时间为 1 小时（+-5min缓冲）
 	// 随机时间防止缓存雪崩
 	randomDuration := time.Duration(rand.Intn(10)) * time.Minute
-	ttl := 1*time.Hour - randomDuration
+	ttl := rediskey.UserInfoTTL - randomDuration
 	async.RunSafe(ctx, func(runCtx context.Context) {
 		if err := r.redisClient.Set(runCtx, cacheKey, userJSON, ttl).Err(); err != nil {
 			LogRedisError(runCtx, err)
@@ -105,7 +105,7 @@ func (r *userRepositoryImpl) BatchGetByUUIDs(ctx context.Context, uuids []string
 	// ==================== 1. 批量查询 Redis ====================
 	keys := make([]string, 0, len(uuids))
 	for _, uuid := range uuids {
-		keys = append(keys, fmt.Sprintf("user:info:%s", uuid))
+		keys = append(keys, rediskey.UserInfoKey(uuid))
 	}
 
 	cachedValues, err := r.redisClient.MGet(ctx, keys...).Result()
@@ -194,8 +194,8 @@ func (r *userRepositoryImpl) BatchGetByUUIDs(ctx context.Context, uuids []string
 				if err != nil {
 					continue
 				}
-				cacheKey := fmt.Sprintf("user:info:%s", user.Uuid)
-				pipe.Set(runCtx, cacheKey, userJSON, getRandomExpireTime(1*time.Hour))
+				cacheKey := rediskey.UserInfoKey(user.Uuid)
+				pipe.Set(runCtx, cacheKey, userJSON, getRandomExpireTime(rediskey.UserInfoTTL))
 			}
 
 			// 对不存在的 UUID 写入空占位，避免缓存穿透
@@ -203,8 +203,8 @@ func (r *userRepositoryImpl) BatchGetByUUIDs(ctx context.Context, uuids []string
 				if _, ok := foundUUIDs[uuid]; ok {
 					continue
 				}
-				cacheKey := fmt.Sprintf("user:info:%s", uuid)
-				pipe.Set(runCtx, cacheKey, "{}", getRandomExpireTime(5*time.Minute))
+				cacheKey := rediskey.UserInfoKey(uuid)
+				pipe.Set(runCtx, cacheKey, "{}", getRandomExpireTime(rediskey.UserInfoEmptyTTL))
 			}
 
 			if _, err := pipe.Exec(runCtx); err != nil {
@@ -243,7 +243,7 @@ func (r *userRepositoryImpl) UpdateAvatar(ctx context.Context, userUUID, avatar 
 	}
 
 	// 更新成功后，删除 Redis 缓存
-	cacheKey := fmt.Sprintf("user:info:%s", userUUID)
+	cacheKey := rediskey.UserInfoKey(userUUID)
 	err = r.redisClient.Del(ctx, cacheKey).Err()
 	if err != nil {
 		// 发送到重试队列
@@ -286,7 +286,7 @@ func (r *userRepositoryImpl) UpdateBasicInfo(ctx context.Context, userUUID strin
 	}
 
 	// 更新成功后，删除Redis缓存
-	cacheKey := fmt.Sprintf("user:info:%s", userUUID)
+	cacheKey := rediskey.UserInfoKey(userUUID)
 	err = r.redisClient.Del(ctx, cacheKey).Err()
 	if err != nil {
 		// 发送到重试队列
@@ -311,7 +311,7 @@ func (r *userRepositoryImpl) UpdateEmail(ctx context.Context, userUUID, email st
 	}
 
 	// 更新成功后，删除Redis缓存
-	cacheKey := fmt.Sprintf("user:info:%s", userUUID)
+	cacheKey := rediskey.UserInfoKey(userUUID)
 	err = r.redisClient.Del(ctx, cacheKey).Err()
 	if err != nil {
 		// 发送到重试队列
@@ -341,7 +341,7 @@ func (r *userRepositoryImpl) Delete(ctx context.Context, userUUID string) error 
 	}
 
 	// 2. 删除 Redis 缓存
-	cacheKey := fmt.Sprintf("user:info:%s", userUUID)
+	cacheKey := rediskey.UserInfoKey(userUUID)
 	err = r.redisClient.Del(ctx, cacheKey).Err()
 	if err != nil {
 		// 发送到重试队列
@@ -385,7 +385,7 @@ func (r *userRepositoryImpl) UpdatePassword(ctx context.Context, userUUID, passw
 	}
 
 	// 更新成功后，删除Redis缓存
-	cacheKey := fmt.Sprintf("user:info:%s", userUUID)
+	cacheKey := rediskey.UserInfoKey(userUUID)
 	err = r.redisClient.Del(ctx, cacheKey).Err()
 	if err != nil {
 		// 发送到重试队列
@@ -403,15 +403,15 @@ func (r *userRepositoryImpl) UpdatePassword(ctx context.Context, userUUID, passw
 // 过期时间: 48小时
 func (r *userRepositoryImpl) SaveQRCode(ctx context.Context, userUUID, token string) error {
 	// 1. 保存 token -> userUUID 映射
-	tokenKey := fmt.Sprintf("user:qrcode:token:%s", token)
-	err := r.redisClient.Set(ctx, tokenKey, userUUID, 48*time.Hour).Err()
+	tokenKey := rediskey.QRCodeTokenKey(token)
+	err := r.redisClient.Set(ctx, tokenKey, userUUID, rediskey.QRCodeTTL).Err()
 	if err != nil {
 		return WrapRedisError(err)
 	}
 
 	// 2. 保存 userUUID -> token 反向映射
-	userKey := fmt.Sprintf("user:qrcode:user:%s", userUUID)
-	err = r.redisClient.Set(ctx, userKey, token, 48*time.Hour).Err()
+	userKey := rediskey.QRCodeUserKey(userUUID)
+	err = r.redisClient.Set(ctx, userKey, token, rediskey.QRCodeTTL).Err()
 	if err != nil {
 		return WrapRedisError(err)
 	}
@@ -421,7 +421,7 @@ func (r *userRepositoryImpl) SaveQRCode(ctx context.Context, userUUID, token str
 
 // GetUUIDByQRCodeToken 根据 token 获取用户 UUID
 func (r *userRepositoryImpl) GetUUIDByQRCodeToken(ctx context.Context, token string) (string, error) {
-	tokenKey := fmt.Sprintf("user:qrcode:token:%s", token)
+	tokenKey := rediskey.QRCodeTokenKey(token)
 	userUUID, err := r.redisClient.Get(ctx, tokenKey).Result()
 	if err != nil {
 		if err == redis.Nil {
@@ -434,7 +434,7 @@ func (r *userRepositoryImpl) GetUUIDByQRCodeToken(ctx context.Context, token str
 
 // GetQRCodeTokenByUserUUID 根据用户 UUID 获取二维码 token和剩余时间
 func (r *userRepositoryImpl) GetQRCodeTokenByUserUUID(ctx context.Context, userUUID string) (string, time.Time, error) {
-	userKey := fmt.Sprintf("user:qrcode:user:%s", userUUID)
+	userKey := rediskey.QRCodeUserKey(userUUID)
 	pipe := r.redisClient.Pipeline()
 	pipe.Get(ctx, userKey)
 	pipe.TTL(ctx, userKey)

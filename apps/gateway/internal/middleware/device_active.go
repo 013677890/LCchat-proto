@@ -1,16 +1,13 @@
 package middleware
 
 import (
+	"ChatServer/consts/redisKey"
 	"ChatServer/pkg/deviceactive"
+	"ChatServer/pkg/logger"
 	pkgredis "ChatServer/pkg/redis"
 	"context"
-	"fmt"
 	"time"
-
-	"ChatServer/pkg/logger"
 )
-
-const deviceActiveTTL = 45 * 24 * time.Hour
 
 func updateDeviceActive(userUUID, deviceID string) {
 	if userUUID == "" || deviceID == "" {
@@ -29,12 +26,12 @@ func updateDeviceActive(userUUID, deviceID string) {
 	}
 
 	ctx := context.Background()
-	key := fmt.Sprintf("user:devices:active:%s", userUUID)
+	key := rediskey.DeviceActiveKey(userUUID)
 	ts := now.Unix()
 
 	pipe := redisClient.Pipeline()
 	pipe.HSet(ctx, key, deviceID, ts)
-	pipe.Expire(ctx, key, deviceActiveTTL)
+	pipe.Expire(ctx, key, rediskey.DeviceActiveTTL)
 	if _, err := pipe.Exec(ctx); err != nil {
 		logger.Warn(ctx, "更新设备活跃时间失败",
 			logger.String("user_uuid", userUUID),

@@ -2,12 +2,12 @@ package repository
 
 import (
 	"ChatServer/apps/user/mq"
+	"ChatServer/consts/redisKey"
 	"ChatServer/model"
 	"context"
 	"crypto/md5"
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
 	"strconv"
 	"time"
 
@@ -21,11 +21,6 @@ type deviceRepositoryImpl struct {
 	redisClient *redis.Client
 }
 
-const (
-	deviceInfoTTL   = 60 * 24 * time.Hour
-	deviceActiveTTL = 45 * 24 * time.Hour
-)
-
 // NewDeviceRepository 创建设备会话仓储实例
 func NewDeviceRepository(db *gorm.DB, redisClient *redis.Client) IDeviceRepository {
 	return &deviceRepositoryImpl{db: db, redisClient: redisClient}
@@ -33,19 +28,19 @@ func NewDeviceRepository(db *gorm.DB, redisClient *redis.Client) IDeviceReposito
 
 // Redis Key 构造函数
 func (r *deviceRepositoryImpl) accessTokenKey(userUUID, deviceID string) string {
-	return fmt.Sprintf("auth:at:%s:%s", userUUID, deviceID)
+	return rediskey.AccessTokenKey(userUUID, deviceID)
 }
 
 func (r *deviceRepositoryImpl) refreshTokenKey(userUUID, deviceID string) string {
-	return fmt.Sprintf("auth:rt:%s:%s", userUUID, deviceID)
+	return rediskey.RefreshTokenKey(userUUID, deviceID)
 }
 
 func (r *deviceRepositoryImpl) deviceInfoKey(userUUID string) string {
-	return fmt.Sprintf("user:devices:%s", userUUID)
+	return rediskey.DeviceInfoKey(userUUID)
 }
 
 func (r *deviceRepositoryImpl) deviceActiveKey(userUUID string) string {
-	return fmt.Sprintf("user:devices:active:%s", userUUID)
+	return rediskey.DeviceActiveKey(userUUID)
 }
 
 type deviceCacheItem struct {
@@ -154,11 +149,11 @@ func (r *deviceRepositoryImpl) storeDeviceInfoCache(ctx context.Context, session
 
 	pipe := r.redisClient.Pipeline()
 	pipe.HSet(ctx, cacheKey, session.DeviceId, value)
-	pipe.Expire(ctx, cacheKey, deviceInfoTTL)
+	pipe.Expire(ctx, cacheKey, rediskey.DeviceInfoTTL)
 	if _, err := pipe.Exec(ctx); err != nil {
 		cmds := []mq.RedisCmd{
 			{Command: "hset", Args: []interface{}{cacheKey, session.DeviceId, value}},
-			{Command: "expire", Args: []interface{}{cacheKey, int(deviceInfoTTL.Seconds())}},
+			{Command: "expire", Args: []interface{}{cacheKey, int(rediskey.DeviceInfoTTL.Seconds())}},
 		}
 		task := mq.BuildPipelineTask(cmds).
 			WithSource("DeviceRepository.storeDeviceInfoCache").
@@ -173,9 +168,9 @@ func (r *deviceRepositoryImpl) TouchDeviceInfoTTL(ctx context.Context, userUUID 
 		return nil
 	}
 	key := r.deviceInfoKey(userUUID)
-	if err := r.redisClient.Expire(ctx, key, deviceInfoTTL).Err(); err != nil {
+	if err := r.redisClient.Expire(ctx, key, rediskey.DeviceInfoTTL).Err(); err != nil {
 		task := mq.BuildPipelineTask([]mq.RedisCmd{
-			{Command: "expire", Args: []interface{}{key, int(deviceInfoTTL.Seconds())}},
+			{Command: "expire", Args: []interface{}{key, int(rediskey.DeviceInfoTTL.Seconds())}},
 		}).WithSource("DeviceRepository.TouchDeviceInfoTTL").WithMaxRetries(3)
 		LogAndRetryRedisError(ctx, task, err)
 		return WrapRedisError(err)
@@ -227,11 +222,11 @@ func (r *deviceRepositoryImpl) SetActiveTimestamp(ctx context.Context, userUUID,
 	key := r.deviceActiveKey(userUUID)
 	pipe := r.redisClient.Pipeline()
 	pipe.HSet(ctx, key, deviceID, ts)
-	pipe.Expire(ctx, key, deviceActiveTTL)
+	pipe.Expire(ctx, key, rediskey.DeviceActiveTTL)
 	if _, err := pipe.Exec(ctx); err != nil {
 		cmds := []mq.RedisCmd{
 			{Command: "hset", Args: []interface{}{key, deviceID, ts}},
-			{Command: "expire", Args: []interface{}{key, int(deviceActiveTTL.Seconds())}},
+			{Command: "expire", Args: []interface{}{key, int(rediskey.DeviceActiveTTL.Seconds())}},
 		}
 		task := mq.BuildPipelineTask(cmds).
 			WithSource("DeviceRepository.SetActiveTimestamp").

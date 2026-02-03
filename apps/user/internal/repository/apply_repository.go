@@ -2,10 +2,10 @@ package repository
 
 import (
 	"context"
-	"fmt"
 	"strconv"
 	"time"
 
+	"ChatServer/consts/redisKey"
 	"ChatServer/model"
 	"ChatServer/pkg/async"
 	"ChatServer/pkg/logger"
@@ -36,12 +36,12 @@ func (r *applyRepositoryImpl) Create(ctx context.Context, apply *model.ApplyRequ
 	// 尽力而为地更新目标用户的待处理申请缓存。
 	// 关键原则：只有 Key 存在时才增量添加，Key 不存在时不操作（让读接口负责全量加载）。
 	// 这避免了 Key 过期后增量添加导致缓存数据不完整的问题。
-	cacheKey := fmt.Sprintf("user:apply:pending:%s", apply.TargetUuid)
+	cacheKey := rediskey.ApplyPendingKey(apply.TargetUuid)
 
 	// 使用 Lua 脚本原子性地：检查 Key 存在 -> 移除占位符 -> 添加新成员 -> 续期
 	luaScript := redis.NewScript(luaAddPendingApplyIfExists)
 
-	expireSeconds := int(getRandomExpireTime(24 * time.Hour).Seconds())
+	expireSeconds := int(getRandomExpireTime(rediskey.ApplyPendingTTL).Seconds())
 	_, err = luaScript.Run(ctx, r.redisClient,
 		[]string{cacheKey},
 		apply.CreatedAt.Unix(),
@@ -57,8 +57,8 @@ func (r *applyRepositoryImpl) Create(ctx context.Context, apply *model.ApplyRequ
 
 	// 更新好友申请未读数量（仅好友申请）
 	if apply.ApplyType == 0 && apply.TargetUuid != "" {
-		notifyKey := fmt.Sprintf("user:notify:friend_apply:unread:%s", apply.TargetUuid)
-		notifyTTL := 7 * 24 * time.Hour
+		notifyKey := rediskey.ApplyUnreadNotifyKey(apply.TargetUuid)
+		notifyTTL := rediskey.ApplyUnreadNotifyTTL
 		pipe := r.redisClient.Pipeline()
 		pipe.Incr(ctx, notifyKey)
 		pipe.Expire(ctx, notifyKey, notifyTTL)
@@ -108,7 +108,7 @@ func (r *applyRepositoryImpl) GetPendingList(ctx context.Context, targetUUID str
 // getPendingListFromCache 从 Redis ZSet 获取待处理申请列表（仅 status=0）
 // 返回 error 表示缓存未命中或失败，调用方应降级到 MySQL
 func (r *applyRepositoryImpl) getPendingListFromCache(ctx context.Context, targetUUID string, page, pageSize int) ([]*model.ApplyRequest, int64, error) {
-	cacheKey := fmt.Sprintf("user:apply:pending:%s", targetUUID)
+	cacheKey := rediskey.ApplyPendingKey(targetUUID)
 
 	// 1. Pipeline 查询：总数 + 分页成员
 	pipe := r.redisClient.Pipeline()
@@ -119,7 +119,7 @@ func (r *applyRepositoryImpl) getPendingListFromCache(ctx context.Context, targe
 
 	// 概率续期：1% 概率续期避免热点 key 过期
 	if getRandomBool(0.01) {
-		pipe.Expire(ctx, cacheKey, getRandomExpireTime(24*time.Hour))
+		pipe.Expire(ctx, cacheKey, getRandomExpireTime(rediskey.ApplyPendingTTL))
 	}
 
 	_, err := pipe.Exec(ctx)
@@ -222,7 +222,7 @@ func (r *applyRepositoryImpl) getPendingListFromDB(ctx context.Context, targetUU
 // rebuildPendingCacheAsync 异步重建待处理申请的 Redis 缓存
 // 注意：必须重新查询全量数据，不能使用分页数据
 func (r *applyRepositoryImpl) rebuildPendingCacheAsync(ctx context.Context, targetUUID string) {
-	cacheKey := fmt.Sprintf("user:apply:pending:%s", targetUUID)
+	cacheKey := rediskey.ApplyPendingKey(targetUUID)
 
 	async.RunSafe(ctx, func(runCtx context.Context) {
 		// 1. 重新查询全量待处理申请（只需要 applicant_uuid 和 created_at）
@@ -246,7 +246,7 @@ func (r *applyRepositoryImpl) rebuildPendingCacheAsync(ctx context.Context, targ
 				Score:  0,
 				Member: "__EMPTY__",
 			})
-			pipe.Expire(runCtx, cacheKey, 5*time.Minute)
+			pipe.Expire(runCtx, cacheKey, rediskey.ApplyPendingEmptyTTL)
 		} else {
 			zs := make([]redis.Z, 0, len(applies))
 			for _, apply := range applies {
@@ -256,7 +256,7 @@ func (r *applyRepositoryImpl) rebuildPendingCacheAsync(ctx context.Context, targ
 				})
 			}
 			pipe.ZAdd(runCtx, cacheKey, zs...)
-			pipe.Expire(runCtx, cacheKey, getRandomExpireTime(24*time.Hour))
+			pipe.Expire(runCtx, cacheKey, getRandomExpireTime(rediskey.ApplyPendingTTL))
 		}
 
 		if _, err := pipe.Exec(runCtx); err != nil {
@@ -447,13 +447,13 @@ func (r *applyRepositoryImpl) invalidateFriendCacheAsync(ctx context.Context, us
 			upsert    bool
 		}{
 			{
-				userKey:   fmt.Sprintf("user:relation:friend:%s", userUUID),
+				userKey:   rediskey.FriendRelationKey(userUUID),
 				newFriend: friendUUID,
 				metaJSON:  buildFriendMetaJSON(remark, "", "", time.Now().UnixMilli()),
 				upsert:    true,
 			},
 			{
-				userKey:   fmt.Sprintf("user:relation:friend:%s", friendUUID),
+				userKey:   rediskey.FriendRelationKey(friendUUID),
 				newFriend: userUUID,
 				metaJSON:  buildFriendMetaJSON("", "", "", time.Now().UnixMilli()),
 				upsert:    false,
@@ -538,8 +538,8 @@ func (r *applyRepositoryImpl) GetUnreadCount(ctx context.Context, targetUUID str
 		return 0, nil
 	}
 
-	notifyKey := fmt.Sprintf("user:notify:friend_apply:unread:%s", targetUUID)
-	notifyTTL := 7 * 24 * time.Hour
+	notifyKey := rediskey.ApplyUnreadNotifyKey(targetUUID)
+	notifyTTL := rediskey.ApplyUnreadNotifyTTL
 	val, err := r.redisClient.Get(ctx, notifyKey).Result()
 	if err != nil {
 		if err == redis.Nil {
@@ -573,7 +573,7 @@ func (r *applyRepositoryImpl) ClearUnreadCount(ctx context.Context, targetUUID s
 	if targetUUID == "" {
 		return nil
 	}
-	notifyKey := fmt.Sprintf("user:notify:friend_apply:unread:%s", targetUUID)
+	notifyKey := rediskey.ApplyUnreadNotifyKey(targetUUID)
 	if err := r.redisClient.Del(ctx, notifyKey).Err(); err != nil && err != redis.Nil {
 		return WrapRedisError(err)
 	}
@@ -584,7 +584,7 @@ func (r *applyRepositoryImpl) ClearUnreadCount(ctx context.Context, targetUUID s
 // 采用 Cache-Aside Pattern：优先查 Redis ZSet，未命中则回源 MySQL 并缓存
 // 使用 ZSet 存储目标用户的待处理申请，以申请时间戳为 score
 func (r *applyRepositoryImpl) ExistsPendingRequest(ctx context.Context, applicantUUID, targetUUID string) (bool, error) {
-	cacheKey := fmt.Sprintf("user:apply:pending:%s", targetUUID)
+	cacheKey := rediskey.ApplyPendingKey(targetUUID)
 
 	// ==================== 1. 组合查询 Redis (Pipeline) ====================
 	pipe := r.redisClient.Pipeline()
@@ -593,7 +593,7 @@ func (r *applyRepositoryImpl) ExistsPendingRequest(ctx context.Context, applican
 
 	// 概率续期优化：1% 的概率在读取时顺便续期
 	if getRandomBool(0.01) {
-		pipe.Expire(ctx, cacheKey, getRandomExpireTime(24*time.Hour))
+		pipe.Expire(ctx, cacheKey, getRandomExpireTime(rediskey.ApplyPendingTTL))
 	}
 
 	_, err := pipe.Exec(ctx)
@@ -630,7 +630,7 @@ func (r *applyRepositoryImpl) ExistsPendingRequest(ctx context.Context, applican
 				Score:  0,
 				Member: "__EMPTY__",
 			})
-			pipe.Expire(runCtx, cacheKey, 5*time.Minute)
+			pipe.Expire(runCtx, cacheKey, rediskey.ApplyPendingEmptyTTL)
 		} else {
 			zs := make([]redis.Z, 0, len(applies))
 			for _, apply := range applies {
@@ -640,7 +640,7 @@ func (r *applyRepositoryImpl) ExistsPendingRequest(ctx context.Context, applican
 				})
 			}
 			pipe.ZAdd(runCtx, cacheKey, zs...)
-			pipe.Expire(runCtx, cacheKey, getRandomExpireTime(24*time.Hour))
+			pipe.Expire(runCtx, cacheKey, getRandomExpireTime(rediskey.ApplyPendingTTL))
 		}
 		if _, err := pipe.Exec(runCtx); err != nil {
 			LogRedisError(runCtx, err)

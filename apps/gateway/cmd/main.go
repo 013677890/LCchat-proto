@@ -7,6 +7,7 @@ import (
 	v1 "ChatServer/apps/gateway/internal/router/v1"
 	"ChatServer/apps/gateway/internal/service"
 	"ChatServer/config"
+	"ChatServer/consts/redisKey"
 	"ChatServer/pkg/deviceactive"
 	"ChatServer/pkg/async"
 	"ChatServer/pkg/logger"
@@ -124,7 +125,7 @@ func main() {
 	logger.Info(ctx, "Redis IP 限流器初始化完成",
 		logger.Float64("rate", 10.0),
 		logger.Int("burst", 20),
-		logger.String("blacklist_key", "gateway:blacklist:ips"),
+		logger.String("blacklist_key", rediskey.GatewayIPBlacklistKey()),
 	)
 
 	// 4.5 初始化设备活跃时间 LRU 缓存
