@@ -7,6 +7,7 @@ import (
 	"ChatServer/pkg/logger"
 	"ChatServer/pkg/util"
 	"context"
+	"errors"
 	"strconv"
 	"time"
 
@@ -95,7 +96,70 @@ func (s *deviceServiceImpl) GetDeviceList(ctx context.Context, req *pb.GetDevice
 
 // KickDevice 踢出设备
 func (s *deviceServiceImpl) KickDevice(ctx context.Context, req *pb.KickDeviceRequest) error {
-	return status.Error(codes.Unimplemented, "踢出设备功能暂未实现")
+	userUUID := util.GetUserUUIDFromContext(ctx)
+	if userUUID == "" {
+		logger.Warn(ctx, "踢出设备失败：user_uuid 为空")
+		return status.Error(codes.Unauthenticated, strconv.Itoa(consts.CodeUnauthorized))
+	}
+
+	if req == nil || req.DeviceId == "" {
+		return status.Error(codes.InvalidArgument, strconv.Itoa(consts.CodeParamError))
+	}
+
+	currentDeviceID := util.GetDeviceIDFromContext(ctx)
+	if currentDeviceID != "" && currentDeviceID == req.DeviceId {
+		return status.Error(codes.FailedPrecondition, strconv.Itoa(consts.CodeCannotKickCurrent))
+	}
+
+	session, err := s.deviceRepo.GetByDeviceID(ctx, userUUID, req.DeviceId)
+	if err != nil {
+		if errors.Is(err, repository.ErrRecordNotFound) {
+			return status.Error(codes.NotFound, strconv.Itoa(consts.CodeDeviceNotFound))
+		}
+		logger.Error(ctx, "踢出设备失败：查询设备会话失败",
+			logger.String("user_uuid", userUUID),
+			logger.String("device_id", req.DeviceId),
+			logger.ErrorField("error", err),
+		)
+		return status.Error(codes.Internal, strconv.Itoa(consts.CodeInternalError))
+	}
+	if session == nil {
+		return status.Error(codes.NotFound, strconv.Itoa(consts.CodeDeviceNotFound))
+	}
+
+	// 幂等语义：无论 token 是否已删除，都返回成功；仅 Redis 异常才报错。
+	if err := s.deviceRepo.DeleteTokens(ctx, userUUID, req.DeviceId); err != nil {
+		logger.Error(ctx, "踢出设备失败：删除设备 Token 失败",
+			logger.String("user_uuid", userUUID),
+			logger.String("device_id", req.DeviceId),
+			logger.ErrorField("error", err),
+		)
+		return status.Error(codes.Internal, strconv.Itoa(consts.CodeInternalError))
+	}
+
+	// status 语义：0=在线, 1=离线(被踢), 2=注销。
+	// 注销设备保持 2；在线设备切到 1；已离线设备幂等成功。
+	if session.Status == 0 {
+		if err := s.deviceRepo.UpdateOnlineStatus(ctx, userUUID, req.DeviceId, 1); err != nil {
+			if errors.Is(err, repository.ErrRecordNotFound) {
+				return status.Error(codes.NotFound, strconv.Itoa(consts.CodeDeviceNotFound))
+			}
+			logger.Error(ctx, "踢出设备失败：更新设备状态失败",
+				logger.String("user_uuid", userUUID),
+				logger.String("device_id", req.DeviceId),
+				logger.ErrorField("error", err),
+			)
+			return status.Error(codes.Internal, strconv.Itoa(consts.CodeInternalError))
+		}
+	}
+
+	logger.Info(ctx, "踢出设备成功",
+		logger.String("user_uuid", userUUID),
+		logger.String("device_id", req.DeviceId),
+		logger.Int("before_status", int(session.Status)),
+	)
+
+	return nil
 }
 
 // GetOnlineStatus 获取用户在线状态

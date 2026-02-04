@@ -332,7 +332,21 @@ func (r *deviceRepositoryImpl) DeleteTokens(ctx context.Context, userUUID, devic
 
 // UpdateOnlineStatus 更新在线状态
 func (r *deviceRepositoryImpl) UpdateOnlineStatus(ctx context.Context, userUUID, deviceID string, status int8) error {
-	return nil // TODO: 更新在线状态
+	result := r.db.WithContext(ctx).
+		Model(&model.DeviceSession{}).
+		Where("user_uuid = ? AND device_id = ? AND deleted_at IS NULL", userUUID, deviceID).
+		Updates(map[string]interface{}{
+			"status":     status,
+			"updated_at": time.Now(),
+		})
+
+	if result.Error != nil {
+		return WrapDBError(result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return ErrRecordNotFound
+	}
+	return nil
 }
 
 // UpdateLastSeen 更新最后活跃时间
