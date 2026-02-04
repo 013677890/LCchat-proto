@@ -28,3 +28,6 @@ Thumbs.db
 *.pb.validate.go
 # --- 第三方库 ---
 third_party/
+
+# --- 编译缓存 ---
+.gocache/
