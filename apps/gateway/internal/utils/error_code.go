@@ -1,18 +1,25 @@
 package utils
 
 import (
-	"google.golang.org/grpc/status"
+	"strconv"
+
 	"ChatServer/consts"
+	"google.golang.org/grpc/status"
 )
 
-// 从grpc错误中提取业务错误码
+// ExtractErrorCode提取业务错误码
 func ExtractErrorCode(err error) int {
 	if err == nil {
 		return 0
 	}
-	st, ok := status.FromError(err)
-	if !ok {
+
+	// 优先从 gRPC status message 提取业务错误码（user 服务约定：message=业务码字符串）
+	if st, ok := status.FromError(err); ok {
+		if bizCode, parseErr := strconv.Atoi(st.Message()); parseErr == nil {
+			return bizCode
+		}
 		return consts.CodeInternalError
 	}
-	return int(st.Code())
+
+	return consts.CodeInternalError
 }

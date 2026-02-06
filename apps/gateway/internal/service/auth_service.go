@@ -42,12 +42,14 @@ func (s *AuthServiceImpl) Login(ctx context.Context, req *dto.LoginRequest, devi
 		// gRPC 调用失败，提取业务错误码
 		code := utils.ExtractErrorCode(err)
 		// 记录错误日志
-		logger.Error(ctx, "调用用户服务 gRPC 失败",
-			logger.ErrorField("error", err),
-			logger.Int("business_code", code),
-			logger.String("business_message", consts.GetMessage(code)),
-			logger.Duration("duration", time.Since(startTime)),
-		)
+		if code >= 30000 {
+			logger.Error(ctx, "调用用户服务 gRPC 失败",
+				logger.ErrorField("error", err),
+				logger.Int("business_code", code),
+				logger.String("business_message", consts.GetMessage(code)),
+				logger.Duration("duration", time.Since(startTime)),
+			)
+		}
 
 		// 返回业务错误（作为 Go error 返回，由 Handler 层处理）
 		return nil, err
@@ -79,12 +81,14 @@ func (s *AuthServiceImpl) Register(ctx context.Context, req *dto.RegisterRequest
 		// gRPC 调用失败，提取业务错误码
 		code := utils.ExtractErrorCode(err)
 		// 记录错误日志
-		logger.Error(ctx, "调用用户服务 gRPC 失败",
-			logger.ErrorField("error", err),
-			logger.Int("business_code", code),
-			logger.String("business_message", consts.GetMessage(code)),
-			logger.Duration("duration", time.Since(startTime)),
-		)
+		if code >= 30000 {
+			logger.Error(ctx, "调用用户服务 gRPC 失败",
+				logger.ErrorField("error", err),
+				logger.Int("business_code", code),
+				logger.String("business_message", consts.GetMessage(code)),
+				logger.Duration("duration", time.Since(startTime)),
+			)
+		}
 		// 返回业务错误（作为 Go error 返回，由 Handler 层处理）
 		return nil, err
 	}
@@ -115,12 +119,14 @@ func (s *AuthServiceImpl) SendVerifyCode(ctx context.Context, req *dto.SendVerif
 		// gRPC 调用失败，提取业务错误码
 		code := utils.ExtractErrorCode(err)
 		// 记录错误日志
-		logger.Error(ctx, "调用用户服务 gRPC 失败",
-			logger.ErrorField("error", err),
-			logger.Int("business_code", code),
-			logger.String("business_message", consts.GetMessage(code)),
-			logger.Duration("duration", time.Since(startTime)),
-		)
+		if code >= 30000 {
+			logger.Error(ctx, "调用用户服务 gRPC 失败",
+				logger.ErrorField("error", err),
+				logger.Int("business_code", code),
+				logger.String("business_message", consts.GetMessage(code)),
+				logger.Duration("duration", time.Since(startTime)),
+			)
+		}
 		// 返回业务错误（作为 Go error 返回，由 Handler 层处理）
 		return nil, err
 	}
@@ -145,12 +151,14 @@ func (s *AuthServiceImpl) LoginByCode(ctx context.Context, req *dto.LoginByCodeR
 		// gRPC 调用失败，提取业务错误码
 		code := utils.ExtractErrorCode(err)
 		// 记录错误日志
-		logger.Error(ctx, "调用用户服务 gRPC 失败",
-			logger.ErrorField("error", err),
-			logger.Int("business_code", code),
-			logger.String("business_message", consts.GetMessage(code)),
-			logger.Duration("duration", time.Since(startTime)),
-		)
+		if code >= 30000 {
+			logger.Error(ctx, "调用用户服务 gRPC 失败",
+				logger.ErrorField("error", err),
+				logger.Int("business_code", code),
+				logger.String("business_message", consts.GetMessage(code)),
+				logger.Duration("duration", time.Since(startTime)),
+			)
+		}
 
 		// 返回业务错误（作为 Go error 返回，由 Handler 层处理）
 		return nil, err
@@ -182,12 +190,14 @@ func (s *AuthServiceImpl) Logout(ctx context.Context, req *dto.LogoutRequest) (*
 		// gRPC 调用失败，提取业务错误码
 		code := utils.ExtractErrorCode(err)
 		// 记录错误日志
-		logger.Error(ctx, "调用用户服务 gRPC 失败",
-			logger.ErrorField("error", err),
-			logger.Int("business_code", code),
-			logger.String("business_message", consts.GetMessage(code)),
-			logger.Duration("duration", time.Since(startTime)),
-		)
+		if code >= 30000 {
+			logger.Error(ctx, "调用用户服务 gRPC 失败",
+				logger.ErrorField("error", err),
+				logger.Int("business_code", code),
+				logger.String("business_message", consts.GetMessage(code)),
+				logger.Duration("duration", time.Since(startTime)),
+			)
+		}
 
 		// 返回业务错误（作为 Go error 返回，由 Handler 层处理）
 		return nil, err
@@ -212,12 +222,14 @@ func (s *AuthServiceImpl) ResetPassword(ctx context.Context, req *dto.ResetPassw
 		// gRPC 调用失败，提取业务错误码
 		code := utils.ExtractErrorCode(err)
 		// 记录错误日志
-		logger.Error(ctx, "调用用户服务 gRPC 失败",
-			logger.ErrorField("error", err),
-			logger.Int("business_code", code),
-			logger.String("business_message", consts.GetMessage(code)),
-			logger.Duration("duration", time.Since(startTime)),
-		)
+		if code >= 30000 {
+			logger.Error(ctx, "调用用户服务 gRPC 失败",
+				logger.ErrorField("error", err),
+				logger.Int("business_code", code),
+				logger.String("business_message", consts.GetMessage(code)),
+				logger.Duration("duration", time.Since(startTime)),
+			)
+		}
 
 		// 返回业务错误（作为 Go error 返回，由 Handler 层处理）
 		return nil, err
@@ -242,12 +254,14 @@ func (s *AuthServiceImpl) RefreshToken(ctx context.Context, req *dto.RefreshToke
 		// gRPC 调用失败，提取业务错误码
 		code := utils.ExtractErrorCode(err)
 		// 记录错误日志
-		logger.Error(ctx, "调用用户服务 gRPC 失败",
-			logger.ErrorField("error", err),
-			logger.Int("business_code", code),
-			logger.String("business_message", consts.GetMessage(code)),
-			logger.Duration("duration", time.Since(startTime)),
-		)
+		if code >= 30000 {
+			logger.Error(ctx, "调用用户服务 gRPC 失败",
+				logger.ErrorField("error", err),
+				logger.Int("business_code", code),
+				logger.String("business_message", consts.GetMessage(code)),
+				logger.Duration("duration", time.Since(startTime)),
+			)
+		}
 
 		// 返回业务错误（作为 Go error 返回，由 Handler 层处理）
 		return nil, err
@@ -272,12 +286,14 @@ func (s *AuthServiceImpl) VerifyCode(ctx context.Context, req *dto.VerifyCodeReq
 		// gRPC 调用失败，提取业务错误码
 		code := utils.ExtractErrorCode(err)
 		// 记录错误日志
-		logger.Error(ctx, "调用用户服务 gRPC 失败",
-			logger.ErrorField("error", err),
-			logger.Int("business_code", code),
-			logger.String("business_message", consts.GetMessage(code)),
-			logger.Duration("duration", time.Since(startTime)),
-		)
+		if code >= 30000 {
+			logger.Error(ctx, "调用用户服务 gRPC 失败",
+				logger.ErrorField("error", err),
+				logger.Int("business_code", code),
+				logger.String("business_message", consts.GetMessage(code)),
+				logger.Duration("duration", time.Since(startTime)),
+			)
+		}
 
 		// 返回业务错误（作为 Go error 返回，由 Handler 层处理）
 		return nil, err

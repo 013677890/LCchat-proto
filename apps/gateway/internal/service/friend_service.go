@@ -24,7 +24,6 @@ func NewFriendService(userClient pb.UserServiceClient) FriendService {
 	}
 }
 
-
 // SendFriendApply 发送好友申请
 func (s *FriendServiceImpl) SendFriendApply(ctx context.Context, req *dto.SendFriendApplyRequest) (*dto.SendFriendApplyResponse, error) {
 	startTime := time.Now()
@@ -38,12 +37,14 @@ func (s *FriendServiceImpl) SendFriendApply(ctx context.Context, req *dto.SendFr
 		// gRPC 调用失败，提取业务错误码
 		code := utils.ExtractErrorCode(err)
 		// 记录错误日志
-		logger.Error(ctx, "调用用户服务 gRPC 失败",
-			logger.ErrorField("error", err),
-			logger.Int("business_code", code),
-			logger.String("business_message", consts.GetMessage(code)),
-			logger.Duration("duration", time.Since(startTime)),
-		)
+		if code >= 30000 {
+			logger.Error(ctx, "调用用户服务 gRPC 失败",
+				logger.ErrorField("error", err),
+				logger.Int("business_code", code),
+				logger.String("business_message", consts.GetMessage(code)),
+				logger.Duration("duration", time.Since(startTime)),
+			)
+		}
 		// 返回业务错误（作为 Go error 返回，由 Handler 层处理）
 		return nil, err
 	}
@@ -69,12 +70,14 @@ func (s *FriendServiceImpl) GetFriendApplyList(ctx context.Context, req *dto.Get
 		// gRPC 调用失败，提取业务错误码
 		code := utils.ExtractErrorCode(err)
 		// 记录错误日志
-		logger.Error(ctx, "调用用户服务 gRPC 失败",
-			logger.ErrorField("error", err),
-			logger.Int("business_code", code),
-			logger.String("business_message", consts.GetMessage(code)),
-			logger.Duration("duration", time.Since(startTime)),
-		)
+		if code >= 30000 {
+			logger.Error(ctx, "调用用户服务 gRPC 失败",
+				logger.ErrorField("error", err),
+				logger.Int("business_code", code),
+				logger.String("business_message", consts.GetMessage(code)),
+				logger.Duration("duration", time.Since(startTime)),
+			)
+		}
 		// 返回业务错误（作为 Go error 返回，由 Handler 层处理）
 		return nil, err
 	}
@@ -132,12 +135,14 @@ func (s *FriendServiceImpl) GetSentApplyList(ctx context.Context, req *dto.GetSe
 		// gRPC 调用失败，提取业务错误码
 		code := utils.ExtractErrorCode(err)
 		// 记录错误日志
-		logger.Error(ctx, "调用用户服务 gRPC 失败",
-			logger.ErrorField("error", err),
-			logger.Int("business_code", code),
-			logger.String("business_message", consts.GetMessage(code)),
-			logger.Duration("duration", time.Since(startTime)),
-		)
+		if code >= 30000 {
+			logger.Error(ctx, "调用用户服务 gRPC 失败",
+				logger.ErrorField("error", err),
+				logger.Int("business_code", code),
+				logger.String("business_message", consts.GetMessage(code)),
+				logger.Duration("duration", time.Since(startTime)),
+			)
+		}
 		// 返回业务错误（作为 Go error 返回，由 Handler 层处理）
 		return nil, err
 	}
@@ -196,12 +201,14 @@ func (s *FriendServiceImpl) HandleFriendApply(ctx context.Context, req *dto.Hand
 		// gRPC 调用失败，提取业务错误码
 		code := utils.ExtractErrorCode(err)
 		// 记录错误日志
-		logger.Error(ctx, "调用用户服务 gRPC 失败",
-			logger.ErrorField("error", err),
-			logger.Int("business_code", code),
-			logger.String("business_message", consts.GetMessage(code)),
-			logger.Duration("duration", time.Since(startTime)),
-		)
+		if code >= 30000 {
+			logger.Error(ctx, "调用用户服务 gRPC 失败",
+				logger.ErrorField("error", err),
+				logger.Int("business_code", code),
+				logger.String("business_message", consts.GetMessage(code)),
+				logger.Duration("duration", time.Since(startTime)),
+			)
+		}
 		// 返回业务错误（作为 Go error 返回，由 Handler 层处理）
 		return nil, err
 	}
@@ -220,12 +227,14 @@ func (s *FriendServiceImpl) GetUnreadApplyCount(ctx context.Context, req *dto.Ge
 		// gRPC 调用失败，提取业务错误码
 		code := utils.ExtractErrorCode(err)
 		// 记录错误日志
-		logger.Error(ctx, "调用用户服务 gRPC 失败",
-			logger.ErrorField("error", err),
-			logger.Int("business_code", code),
-			logger.String("business_message", consts.GetMessage(code)),
-			logger.Duration("duration", time.Since(startTime)),
-		)
+		if code >= 30000 {
+			logger.Error(ctx, "调用用户服务 gRPC 失败",
+				logger.ErrorField("error", err),
+				logger.Int("business_code", code),
+				logger.String("business_message", consts.GetMessage(code)),
+				logger.Duration("duration", time.Since(startTime)),
+			)
+		}
 		// 返回业务错误（作为 Go error 返回，由 Handler 层处理）
 		return nil, err
 	}
@@ -247,12 +256,14 @@ func (s *FriendServiceImpl) MarkApplyAsRead(ctx context.Context, req *dto.MarkAp
 		// gRPC 调用失败，提取业务错误码
 		code := utils.ExtractErrorCode(err)
 		// 记录错误日志
-		logger.Error(ctx, "调用用户服务 gRPC 失败",
-			logger.ErrorField("error", err),
-			logger.Int("business_code", code),
-			logger.String("business_message", consts.GetMessage(code)),
-			logger.Duration("duration", time.Since(startTime)),
-		)
+		if code >= 30000 {
+			logger.Error(ctx, "调用用户服务 gRPC 失败",
+				logger.ErrorField("error", err),
+				logger.Int("business_code", code),
+				logger.String("business_message", consts.GetMessage(code)),
+				logger.Duration("duration", time.Since(startTime)),
+			)
+		}
 		// 返回业务错误（作为 Go error 返回，由 Handler 层处理）
 		return nil, err
 	}
@@ -278,12 +289,14 @@ func (s *FriendServiceImpl) GetFriendList(ctx context.Context, req *dto.GetFrien
 		// gRPC 调用失败，提取业务错误码
 		code := utils.ExtractErrorCode(err)
 		// 记录错误日志
-		logger.Error(ctx, "调用用户服务 gRPC 失败",
-			logger.ErrorField("error", err),
-			logger.Int("business_code", code),
-			logger.String("business_message", consts.GetMessage(code)),
-			logger.Duration("duration", time.Since(startTime)),
-		)
+		if code >= 30000 {
+			logger.Error(ctx, "调用用户服务 gRPC 失败",
+				logger.ErrorField("error", err),
+				logger.Int("business_code", code),
+				logger.String("business_message", consts.GetMessage(code)),
+				logger.Duration("duration", time.Since(startTime)),
+			)
+		}
 		// 返回业务错误（作为 Go error 返回，由 Handler 层处理）
 		return nil, err
 	}
@@ -342,12 +355,14 @@ func (s *FriendServiceImpl) SyncFriendList(ctx context.Context, req *dto.SyncFri
 		// gRPC 调用失败，提取业务错误码
 		code := utils.ExtractErrorCode(err)
 		// 记录错误日志
-		logger.Error(ctx, "调用用户服务 gRPC 失败",
-			logger.ErrorField("error", err),
-			logger.Int("business_code", code),
-			logger.String("business_message", consts.GetMessage(code)),
-			logger.Duration("duration", time.Since(startTime)),
-		)
+		if code >= 30000 {
+			logger.Error(ctx, "调用用户服务 gRPC 失败",
+				logger.ErrorField("error", err),
+				logger.Int("business_code", code),
+				logger.String("business_message", consts.GetMessage(code)),
+				logger.Duration("duration", time.Since(startTime)),
+			)
+		}
 		// 返回业务错误（作为 Go error 返回，由 Handler 层处理）
 		return nil, err
 	}
@@ -404,12 +419,14 @@ func (s *FriendServiceImpl) DeleteFriend(ctx context.Context, req *dto.DeleteFri
 		// gRPC 调用失败，提取业务错误码
 		code := utils.ExtractErrorCode(err)
 		// 记录错误日志
-		logger.Error(ctx, "调用用户服务 gRPC 失败",
-			logger.ErrorField("error", err),
-			logger.Int("business_code", code),
-			logger.String("business_message", consts.GetMessage(code)),
-			logger.Duration("duration", time.Since(startTime)),
-		)
+		if code >= 30000 {
+			logger.Error(ctx, "调用用户服务 gRPC 失败",
+				logger.ErrorField("error", err),
+				logger.Int("business_code", code),
+				logger.String("business_message", consts.GetMessage(code)),
+				logger.Duration("duration", time.Since(startTime)),
+			)
+		}
 		// 返回业务错误（作为 Go error 返回，由 Handler 层处理）
 		return nil, err
 	}
@@ -431,12 +448,14 @@ func (s *FriendServiceImpl) SetFriendRemark(ctx context.Context, req *dto.SetFri
 		// gRPC 调用失败，提取业务错误码
 		code := utils.ExtractErrorCode(err)
 		// 记录错误日志
-		logger.Error(ctx, "调用用户服务 gRPC 失败",
-			logger.ErrorField("error", err),
-			logger.Int("business_code", code),
-			logger.String("business_message", consts.GetMessage(code)),
-			logger.Duration("duration", time.Since(startTime)),
-		)
+		if code >= 30000 {
+			logger.Error(ctx, "调用用户服务 gRPC 失败",
+				logger.ErrorField("error", err),
+				logger.Int("business_code", code),
+				logger.String("business_message", consts.GetMessage(code)),
+				logger.Duration("duration", time.Since(startTime)),
+			)
+		}
 		// 返回业务错误（作为 Go error 返回，由 Handler 层处理）
 		return nil, err
 	}
@@ -458,12 +477,14 @@ func (s *FriendServiceImpl) SetFriendTag(ctx context.Context, req *dto.SetFriend
 		// gRPC 调用失败，提取业务错误码
 		code := utils.ExtractErrorCode(err)
 		// 记录错误日志
-		logger.Error(ctx, "调用用户服务 gRPC 失败",
-			logger.ErrorField("error", err),
-			logger.Int("business_code", code),
-			logger.String("business_message", consts.GetMessage(code)),
-			logger.Duration("duration", time.Since(startTime)),
-		)
+		if code >= 30000 {
+			logger.Error(ctx, "调用用户服务 gRPC 失败",
+				logger.ErrorField("error", err),
+				logger.Int("business_code", code),
+				logger.String("business_message", consts.GetMessage(code)),
+				logger.Duration("duration", time.Since(startTime)),
+			)
+		}
 		// 返回业务错误（作为 Go error 返回，由 Handler 层处理）
 		return nil, err
 	}
@@ -482,12 +503,14 @@ func (s *FriendServiceImpl) GetTagList(ctx context.Context, req *dto.GetTagListR
 		// gRPC 调用失败，提取业务错误码
 		code := utils.ExtractErrorCode(err)
 		// 记录错误日志
-		logger.Error(ctx, "调用用户服务 gRPC 失败",
-			logger.ErrorField("error", err),
-			logger.Int("business_code", code),
-			logger.String("business_message", consts.GetMessage(code)),
-			logger.Duration("duration", time.Since(startTime)),
-		)
+		if code >= 30000 {
+			logger.Error(ctx, "调用用户服务 gRPC 失败",
+				logger.ErrorField("error", err),
+				logger.Int("business_code", code),
+				logger.String("business_message", consts.GetMessage(code)),
+				logger.Duration("duration", time.Since(startTime)),
+			)
+		}
 		// 返回业务错误（作为 Go error 返回，由 Handler 层处理）
 		return nil, err
 	}
@@ -509,12 +532,14 @@ func (s *FriendServiceImpl) CheckIsFriend(ctx context.Context, req *dto.CheckIsF
 		// gRPC 调用失败，提取业务错误码
 		code := utils.ExtractErrorCode(err)
 		// 记录错误日志
-		logger.Error(ctx, "调用用户服务 gRPC 失败",
-			logger.ErrorField("error", err),
-			logger.Int("business_code", code),
-			logger.String("business_message", consts.GetMessage(code)),
-			logger.Duration("duration", time.Since(startTime)),
-		)
+		if code >= 30000 {
+			logger.Error(ctx, "调用用户服务 gRPC 失败",
+				logger.ErrorField("error", err),
+				logger.Int("business_code", code),
+				logger.String("business_message", consts.GetMessage(code)),
+				logger.Duration("duration", time.Since(startTime)),
+			)
+		}
 		// 返回业务错误（作为 Go error 返回，由 Handler 层处理）
 		return nil, err
 	}
@@ -536,12 +561,14 @@ func (s *FriendServiceImpl) GetRelationStatus(ctx context.Context, req *dto.GetR
 		// gRPC 调用失败，提取业务错误码
 		code := utils.ExtractErrorCode(err)
 		// 记录错误日志
-		logger.Error(ctx, "调用用户服务 gRPC 失败",
-			logger.ErrorField("error", err),
-			logger.Int("business_code", code),
-			logger.String("business_message", consts.GetMessage(code)),
-			logger.Duration("duration", time.Since(startTime)),
-		)
+		if code >= 30000 {
+			logger.Error(ctx, "调用用户服务 gRPC 失败",
+				logger.ErrorField("error", err),
+				logger.Int("business_code", code),
+				logger.String("business_message", consts.GetMessage(code)),
+				logger.Duration("duration", time.Since(startTime)),
+			)
+		}
 		// 返回业务错误（作为 Go error 返回，由 Handler 层处理）
 		return nil, err
 	}

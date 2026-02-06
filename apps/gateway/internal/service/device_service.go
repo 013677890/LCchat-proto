@@ -31,12 +31,14 @@ func (s *DeviceServiceImpl) GetDeviceList(ctx context.Context) (*dto.GetDeviceLi
 	grpcResp, err := s.userClient.GetDeviceList(ctx, &userpb.GetDeviceListRequest{})
 	if err != nil {
 		code := utils.ExtractErrorCode(err)
-		logger.Error(ctx, "调用用户服务 gRPC 失败",
-			logger.ErrorField("error", err),
-			logger.Int("business_code", code),
-			logger.String("business_message", consts.GetMessage(code)),
-			logger.Duration("duration", time.Since(startTime)),
-		)
+		if code >= 30000 {
+			logger.Error(ctx, "调用用户服务 gRPC 失败",
+				logger.ErrorField("error", err),
+				logger.Int("business_code", code),
+				logger.String("business_message", consts.GetMessage(code)),
+				logger.Duration("duration", time.Since(startTime)),
+			)
+		}
 		return nil, err
 	}
 
@@ -51,12 +53,14 @@ func (s *DeviceServiceImpl) KickDevice(ctx context.Context, req *dto.KickDeviceR
 	grpcResp, err := s.userClient.KickDevice(ctx, grpcReq)
 	if err != nil {
 		code := utils.ExtractErrorCode(err)
-		logger.Error(ctx, "调用用户服务 gRPC 失败",
-			logger.ErrorField("error", err),
-			logger.Int("business_code", code),
-			logger.String("business_message", consts.GetMessage(code)),
-			logger.Duration("duration", time.Since(startTime)),
-		)
+		if code >= 30000 {
+			logger.Error(ctx, "调用用户服务 gRPC 失败",
+				logger.ErrorField("error", err),
+				logger.Int("business_code", code),
+				logger.String("business_message", consts.GetMessage(code)),
+				logger.Duration("duration", time.Since(startTime)),
+			)
+		}
 		return nil, err
 	}
 
@@ -71,12 +75,14 @@ func (s *DeviceServiceImpl) GetOnlineStatus(ctx context.Context, req *dto.GetOnl
 	grpcResp, err := s.userClient.GetOnlineStatus(ctx, grpcReq)
 	if err != nil {
 		code := utils.ExtractErrorCode(err)
-		logger.Error(ctx, "调用用户服务 gRPC 失败",
-			logger.ErrorField("error", err),
-			logger.Int("business_code", code),
-			logger.String("business_message", consts.GetMessage(code)),
-			logger.Duration("duration", time.Since(startTime)),
-		)
+		if code >= 30000 {
+			logger.Error(ctx, "调用用户服务 gRPC 失败",
+				logger.ErrorField("error", err),
+				logger.Int("business_code", code),
+				logger.String("business_message", consts.GetMessage(code)),
+				logger.Duration("duration", time.Since(startTime)),
+			)
+		}
 		return nil, err
 	}
 
@@ -91,12 +97,14 @@ func (s *DeviceServiceImpl) BatchGetOnlineStatus(ctx context.Context, req *dto.B
 	grpcResp, err := s.userClient.BatchGetOnlineStatus(ctx, grpcReq)
 	if err != nil {
 		code := utils.ExtractErrorCode(err)
-		logger.Error(ctx, "调用用户服务 gRPC 失败",
-			logger.ErrorField("error", err),
-			logger.Int("business_code", code),
-			logger.String("business_message", consts.GetMessage(code)),
-			logger.Duration("duration", time.Since(startTime)),
-		)
+		if code >= 30000 {
+			logger.Error(ctx, "调用用户服务 gRPC 失败",
+				logger.ErrorField("error", err),
+				logger.Int("business_code", code),
+				logger.String("business_message", consts.GetMessage(code)),
+				logger.Duration("duration", time.Since(startTime)),
+			)
+		}
 		return nil, err
 	}
 

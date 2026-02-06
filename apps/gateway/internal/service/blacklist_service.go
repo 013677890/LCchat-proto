@@ -32,12 +32,14 @@ func (s *BlacklistServiceImpl) AddBlacklist(ctx context.Context, req *dto.AddBla
 	grpcResp, err := s.userClient.AddBlacklist(ctx, grpcReq)
 	if err != nil {
 		code := utils.ExtractErrorCode(err)
-		logger.Error(ctx, "调用用户服务 gRPC 失败",
-			logger.ErrorField("error", err),
-			logger.Int("business_code", code),
-			logger.String("business_message", consts.GetMessage(code)),
-			logger.Duration("duration", time.Since(startTime)),
-		)
+		if code >= 30000 {
+			logger.Error(ctx, "调用用户服务 gRPC 失败",
+				logger.ErrorField("error", err),
+				logger.Int("business_code", code),
+				logger.String("business_message", consts.GetMessage(code)),
+				logger.Duration("duration", time.Since(startTime)),
+			)
+		}
 		return nil, err
 	}
 
@@ -52,12 +54,14 @@ func (s *BlacklistServiceImpl) RemoveBlacklist(ctx context.Context, req *dto.Rem
 	grpcResp, err := s.userClient.RemoveBlacklist(ctx, grpcReq)
 	if err != nil {
 		code := utils.ExtractErrorCode(err)
-		logger.Error(ctx, "调用用户服务 gRPC 失败",
-			logger.ErrorField("error", err),
-			logger.Int("business_code", code),
-			logger.String("business_message", consts.GetMessage(code)),
-			logger.Duration("duration", time.Since(startTime)),
-		)
+		if code >= 30000 {
+			logger.Error(ctx, "调用用户服务 gRPC 失败",
+				logger.ErrorField("error", err),
+				logger.Int("business_code", code),
+				logger.String("business_message", consts.GetMessage(code)),
+				logger.Duration("duration", time.Since(startTime)),
+			)
+		}
 		return nil, err
 	}
 
@@ -75,12 +79,14 @@ func (s *BlacklistServiceImpl) GetBlacklistList(ctx context.Context, req *dto.Ge
 	grpcResp, err := s.userClient.GetBlacklistList(ctx, grpcReq)
 	if err != nil {
 		code := utils.ExtractErrorCode(err)
-		logger.Error(ctx, "调用用户服务 gRPC 失败",
-			logger.ErrorField("error", err),
-			logger.Int("business_code", code),
-			logger.String("business_message", consts.GetMessage(code)),
-			logger.Duration("duration", time.Since(startTime)),
-		)
+		if code >= 30000 {
+			logger.Error(ctx, "调用用户服务 gRPC 失败",
+				logger.ErrorField("error", err),
+				logger.Int("business_code", code),
+				logger.String("business_message", consts.GetMessage(code)),
+				logger.Duration("duration", time.Since(startTime)),
+			)
+		}
 		return nil, err
 	}
 
@@ -172,12 +178,14 @@ func (s *BlacklistServiceImpl) CheckIsBlacklist(ctx context.Context, req *dto.Ch
 	grpcResp, err := s.userClient.CheckIsBlacklist(ctx, grpcReq)
 	if err != nil {
 		code := utils.ExtractErrorCode(err)
-		logger.Error(ctx, "调用用户服务 gRPC 失败",
-			logger.ErrorField("error", err),
-			logger.Int("business_code", code),
-			logger.String("business_message", consts.GetMessage(code)),
-			logger.Duration("duration", time.Since(startTime)),
-		)
+		if code >= 30000 {
+			logger.Error(ctx, "调用用户服务 gRPC 失败",
+				logger.ErrorField("error", err),
+				logger.Int("business_code", code),
+				logger.String("business_message", consts.GetMessage(code)),
+				logger.Duration("duration", time.Since(startTime)),
+			)
+		}
 		return nil, err
 	}
 
