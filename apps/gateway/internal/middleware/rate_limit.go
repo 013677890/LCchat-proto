@@ -40,12 +40,14 @@ local requested = tonumber(ARGV[4])
 
 -- 获取当前状态
 local info = redis.call('HMGET', key, 'tokens', 'last_time')
-local current_tokens = tonumber(info[1]) or 0
-local last_time = tonumber(info[2]) or now
+local current_tokens = tonumber(info[1])
+local last_time = tonumber(info[2])
 
 -- 初始化
 if current_tokens == nil then
     current_tokens = capacity
+end
+if last_time == nil then
     last_time = now
 end
 
@@ -253,7 +255,7 @@ func InitRedisRateLimiter(rate float64, burst int, redisClient *redis.Client) {
 //	router.Use(IPRateLimitMiddleware("gateway:blacklist:ips", 10, 20))
 func IPRateLimitMiddleware(blacklistKey string, rate float64, burst int) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		ctx := c.Request.Context()
+		ctx := c
 
 		// 1. 获取客户端 IP
 		ip, exists := GetClientIPSafe(c)
@@ -320,7 +322,7 @@ func IPRateLimitMiddleware(blacklistKey string, rate float64, burst int) gin.Han
 			)
 
 			c.JSON(http.StatusTooManyRequests, gin.H{
-				"code":    429,
+				"code":    10005,
 				"message": "请求过于频繁，请稍后再试",
 			})
 			c.Abort()
@@ -347,7 +349,7 @@ func IPRateLimitMiddleware(blacklistKey string, rate float64, burst int) gin.Han
 //	api.Use(UserRateLimitMiddleware(100, 200))
 func UserRateLimitMiddleware(rate float64, burst int) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		ctx := c.Request.Context()
+		ctx := c
 
 		// 1. 获取用户 UUID
 		userUUID, exists := GetUserUUID(c)
@@ -393,7 +395,7 @@ func UserRateLimitMiddleware(rate float64, burst int) gin.HandlerFunc {
 			)
 
 			c.JSON(http.StatusTooManyRequests, gin.H{
-				"code":    429,
+				"code":    10005,
 				"message": "请求过于频繁，请稍后再试",
 			})
 			c.Abort()
@@ -423,7 +425,7 @@ func UserRateLimitMiddlewareWithConfig(rate float64, burst int) gin.HandlerFunc 
 	var once sync.Once
 
 	return func(c *gin.Context) {
-		ctx := c.Request.Context()
+		ctx := c
 
 		// 懒加载 Redis Client，只执行一次
 		once.Do(func() {
@@ -464,7 +466,7 @@ func UserRateLimitMiddlewareWithConfig(rate float64, burst int) gin.HandlerFunc 
 			)
 
 			c.JSON(http.StatusTooManyRequests, gin.H{
-				"code":    429,
+				"code":    10005,
 				"message": "请求过于频繁，请稍后再试",
 			})
 			c.Abort()
@@ -496,7 +498,7 @@ func IPRateLimitMiddlewareWithConfig(blacklistKey string, rate float64, burst in
 	var once sync.Once
 
 	return func(c *gin.Context) {
-		ctx := c.Request.Context()
+		ctx := c
 
 		// 懒加载 Redis Client，只执行一次
 		once.Do(func() {
@@ -562,7 +564,7 @@ func IPRateLimitMiddlewareWithConfig(blacklistKey string, rate float64, burst in
 			)
 
 			c.JSON(http.StatusTooManyRequests, gin.H{
-				"code":    429,
+				"code":    10005,
 				"message": "请求过于频繁，请稍后再试",
 			})
 			c.Abort()

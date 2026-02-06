@@ -30,7 +30,20 @@ func main() {
 	traceId := "0"
 	ctx = context.WithValue(ctx, "trace_id", traceId)
 
-	// 1. 初始化 Redis
+	// 1. 初始化日志（必须先于任何 logger 调用）
+	cfg := config.DefaultLoggerConfig()
+	l, err := logger.Build(cfg)
+	if err != nil {
+		fmt.Printf("初始化日志失败: %v\n", err)
+		os.Exit(1)
+	}
+	logger.ReplaceGlobal(l)
+	defer func() {
+		// Sync 在某些输出目标上可能返回错误（如 stdout），这里忽略
+		_ = l.Sync()
+	}()
+
+	// 2. 初始化 Redis
 	redisCfg := config.DefaultRedisConfig()
 	redisClient, err := pkgredis.Build(redisCfg)
 	if err != nil {
@@ -45,22 +58,6 @@ func main() {
 			logger.String("addr", redisCfg.Addr),
 		)
 	}
-
-	// 2. 初始化日志
-	cfg := config.DefaultLoggerConfig()
-	l, err := logger.Build(cfg)
-	if err != nil {
-		fmt.Printf("初始化日志失败: %v\n", err)
-		os.Exit(1)
-	}
-	logger.ReplaceGlobal(l)
-	defer func() {
-		// 同步日志缓冲区
-		if err := logger.L().Sync(); err != nil {
-			// Sync 在某些情况下会返回错误（如 os.Stdout），可以忽略
-			_ = err
-		}
-	}()
 
 	// 2.5 初始化 Async 协程池
 	async.SetContextPropagator(func(parent context.Context) context.Context {
