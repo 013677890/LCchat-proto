@@ -72,7 +72,14 @@ func (r *applyRepositoryImpl) Create(ctx context.Context, apply *model.ApplyRequ
 
 // GetByID 根据ID获取好友申请
 func (r *applyRepositoryImpl) GetByID(ctx context.Context, id int64) (*model.ApplyRequest, error) {
-	return nil, nil // TODO: 根据ID获取好友申请
+	var apply model.ApplyRequest
+	err := r.db.WithContext(ctx).
+		Where("id = ? AND apply_type = ? AND deleted_at IS NULL", id, 0).
+		First(&apply).Error
+	if err != nil {
+		return nil, WrapDBError(err)
+	}
+	return &apply, nil
 }
 
 // GetPendingList 获取待处理的好友申请列表
@@ -658,5 +665,5 @@ func (r *applyRepositoryImpl) ExistsPendingRequest(ctx context.Context, applican
 
 // GetByIDWithInfo 根据ID获取好友申请（仅申请记录）
 func (r *applyRepositoryImpl) GetByIDWithInfo(ctx context.Context, id int64) (*model.ApplyRequest, error) {
-	return nil, nil // TODO: 根据ID获取好友申请（仅申请记录）
+	return r.GetByID(ctx, id)
 }

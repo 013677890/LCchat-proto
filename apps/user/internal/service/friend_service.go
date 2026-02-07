@@ -388,6 +388,12 @@ func (s *friendServiceImpl) HandleFriendApply(ctx context.Context, req *pb.Handl
 		)
 		return status.Error(codes.NotFound, strconv.Itoa(consts.CodeApplyNotFoundOrHandle))
 	}
+	if apply == nil {
+		logger.Warn(ctx, "好友申请不存在",
+			logger.Int64("apply_id", req.ApplyId),
+		)
+		return status.Error(codes.NotFound, strconv.Itoa(consts.CodeApplyNotFoundOrHandle))
+	}
 
 	// 3. 验证当前用户是否有权限处理该申请
 	if apply.TargetUuid != currentUserUUID {

@@ -145,19 +145,19 @@ func (f *fakeFriendRepoForService) SyncFriendList(ctx context.Context, userUUID 
 }
 
 type fakeApplyRepoForService struct {
-	createFn            func(context.Context, *model.ApplyRequest) (*model.ApplyRequest, error)
-	getByIDFn           func(context.Context, int64) (*model.ApplyRequest, error)
-	getPendingListFn    func(context.Context, string, int, int, int) ([]*model.ApplyRequest, int64, error)
-	getSentListFn       func(context.Context, string, int, int, int) ([]*model.ApplyRequest, int64, error)
-	updateStatusFn      func(context.Context, int64, int, string) error
-	acceptApplyFn       func(context.Context, int64, string, string, string) (bool, error)
-	markAsReadFn        func(context.Context, string, []int64) (int64, error)
-	markAllAsReadFn     func(context.Context, string) (int64, error)
-	markAsReadAsyncFn   func(context.Context, []int64)
-	getUnreadCountFn    func(context.Context, string) (int64, error)
-	clearUnreadCountFn  func(context.Context, string) error
-	existsPendingReqFn  func(context.Context, string, string) (bool, error)
-	getByIDWithInfoFn   func(context.Context, int64) (*model.ApplyRequest, error)
+	createFn           func(context.Context, *model.ApplyRequest) (*model.ApplyRequest, error)
+	getByIDFn          func(context.Context, int64) (*model.ApplyRequest, error)
+	getPendingListFn   func(context.Context, string, int, int, int) ([]*model.ApplyRequest, int64, error)
+	getSentListFn      func(context.Context, string, int, int, int) ([]*model.ApplyRequest, int64, error)
+	updateStatusFn     func(context.Context, int64, int, string) error
+	acceptApplyFn      func(context.Context, int64, string, string, string) (bool, error)
+	markAsReadFn       func(context.Context, string, []int64) (int64, error)
+	markAllAsReadFn    func(context.Context, string) (int64, error)
+	markAsReadAsyncFn  func(context.Context, []int64)
+	getUnreadCountFn   func(context.Context, string) (int64, error)
+	clearUnreadCountFn func(context.Context, string) error
+	existsPendingReqFn func(context.Context, string, string) (bool, error)
+	getByIDWithInfoFn  func(context.Context, int64) (*model.ApplyRequest, error)
 }
 
 func (f *fakeApplyRepoForService) Create(ctx context.Context, apply *model.ApplyRequest) (*model.ApplyRequest, error) {
@@ -251,11 +251,11 @@ func (f *fakeApplyRepoForService) GetByIDWithInfo(ctx context.Context, id int64)
 }
 
 type fakeBlacklistRepoForService struct {
-	isBlockedFn          func(context.Context, string, string) (bool, error)
-	addBlacklistFn       func(context.Context, string, string) error
-	removeBlacklistFn    func(context.Context, string, string) error
-	getBlacklistListFn   func(context.Context, string, int, int) ([]*model.UserRelation, int64, error)
-	getBlacklistRelFn    func(context.Context, string, string) (*model.UserRelation, error)
+	isBlockedFn        func(context.Context, string, string) (bool, error)
+	addBlacklistFn     func(context.Context, string, string) error
+	removeBlacklistFn  func(context.Context, string, string) error
+	getBlacklistListFn func(context.Context, string, int, int) ([]*model.UserRelation, int64, error)
+	getBlacklistRelFn  func(context.Context, string, string) (*model.UserRelation, error)
 }
 
 func (f *fakeBlacklistRepoForService) AddBlacklist(ctx context.Context, userUUID, targetUUID string) error {
@@ -512,6 +512,16 @@ func TestUserFriendServiceHandleFriendApply(t *testing.T) {
 			},
 		}, &fakeBlacklistRepoForService{})
 		err := svc.HandleFriendApply(withFriendUserUUID("u1"), &pb.HandleFriendApplyRequest{ApplyId: 1, Action: 1})
+		requireFriendStatusCode(t, err, codes.NotFound, consts.CodeApplyNotFoundOrHandle)
+	})
+
+	t.Run("apply_nil_without_error", func(t *testing.T) {
+		svc := NewFriendService(&fakeFriendRepoForService{}, &fakeApplyRepoForService{
+			getByIDFn: func(_ context.Context, _ int64) (*model.ApplyRequest, error) {
+				return nil, nil
+			},
+		}, &fakeBlacklistRepoForService{})
+		err := svc.HandleFriendApply(withFriendUserUUID("u1"), &pb.HandleFriendApplyRequest{ApplyId: 1, Action: 2})
 		requireFriendStatusCode(t, err, codes.NotFound, consts.CodeApplyNotFoundOrHandle)
 	})
 
