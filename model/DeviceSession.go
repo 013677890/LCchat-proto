@@ -22,7 +22,7 @@ type DeviceSession struct {
 	// 环境信息 (风控用)
 	AppVersion string `gorm:"column:app_version;type:varchar(32);comment:APP版本"`
 	IP         string `gorm:"column:ip;type:varchar(64);comment:登录IP"`
-	UserAgent  string `gorm:"column:user_agent;type:varchar(128);comment:User Agent(精简)"` // 仅保留必要信息
+	UserAgent  string `gorm:"column:user_agent;type:varchar(512);comment:User Agent(精简)"` // 仅保留必要信息
 
 	// 时间与状态
 	ExpireAt *time.Time `gorm:"column:expire_at;index;comment:过期时间(用于清理过期会话)"`
