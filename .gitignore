@@ -31,3 +31,7 @@ third_party/
 
 # --- 编译缓存 ---
 .gocache/
+
+# --- 前端文件 ---
+web/
+

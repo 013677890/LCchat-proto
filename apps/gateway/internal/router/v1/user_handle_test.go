@@ -303,7 +303,7 @@ func TestUserHandlerSearchUser(t *testing.T) {
 			},
 		})
 		w := httptest.NewRecorder()
-		req, err := http.NewRequest(http.MethodGet, "/api/v1/auth/user/search?Keyword=alice&Page=1&PageSize=20", nil)
+		req, err := http.NewRequest(http.MethodGet, "/api/v1/auth/user/search?keyword=alice&page=1&pageSize=20", nil)
 		require.NoError(t, err)
 		c, _ := gin.CreateTestContext(w)
 		c.Request = req
@@ -311,6 +311,65 @@ func TestUserHandlerSearchUser(t *testing.T) {
 		h.SearchUser(c)
 		assert.Equal(t, http.StatusOK, w.Code)
 		assert.Equal(t, consts.CodeSuccess, decodeUserHandlerCode(t, w))
+	})
+
+	t.Run("success_with_default_pagination", func(t *testing.T) {
+		h := NewUserHandler(&fakeUserHTTPService{
+			searchUserFn: func(_ context.Context, req *dto.SearchUserRequest) (*dto.SearchUserResponse, error) {
+				require.Equal(t, "alice", req.Keyword)
+				require.Equal(t, int32(1), req.Page)
+				require.Equal(t, int32(100), req.PageSize)
+				return &dto.SearchUserResponse{}, nil
+			},
+		})
+		w := httptest.NewRecorder()
+		req, err := http.NewRequest(http.MethodGet, "/api/v1/auth/user/search?keyword=alice", nil)
+		require.NoError(t, err)
+		c, _ := gin.CreateTestContext(w)
+		c.Request = req
+
+		h.SearchUser(c)
+		assert.Equal(t, http.StatusOK, w.Code)
+		assert.Equal(t, consts.CodeSuccess, decodeUserHandlerCode(t, w))
+	})
+
+	t.Run("page_zero_failed", func(t *testing.T) {
+		h := NewUserHandler(&fakeUserHTTPService{})
+		w := httptest.NewRecorder()
+		req, err := http.NewRequest(http.MethodGet, "/api/v1/auth/user/search?keyword=alice&page=0", nil)
+		require.NoError(t, err)
+		c, _ := gin.CreateTestContext(w)
+		c.Request = req
+
+		h.SearchUser(c)
+		assert.Equal(t, http.StatusOK, w.Code)
+		assert.Equal(t, consts.CodeParamError, decodeUserHandlerCode(t, w))
+	})
+
+	t.Run("page_size_zero_failed", func(t *testing.T) {
+		h := NewUserHandler(&fakeUserHTTPService{})
+		w := httptest.NewRecorder()
+		req, err := http.NewRequest(http.MethodGet, "/api/v1/auth/user/search?keyword=alice&pageSize=0", nil)
+		require.NoError(t, err)
+		c, _ := gin.CreateTestContext(w)
+		c.Request = req
+
+		h.SearchUser(c)
+		assert.Equal(t, http.StatusOK, w.Code)
+		assert.Equal(t, consts.CodeParamError, decodeUserHandlerCode(t, w))
+	})
+
+	t.Run("page_size_too_large_failed", func(t *testing.T) {
+		h := NewUserHandler(&fakeUserHTTPService{})
+		w := httptest.NewRecorder()
+		req, err := http.NewRequest(http.MethodGet, "/api/v1/auth/user/search?keyword=alice&pageSize=101", nil)
+		require.NoError(t, err)
+		c, _ := gin.CreateTestContext(w)
+		c.Request = req
+
+		h.SearchUser(c)
+		assert.Equal(t, http.StatusOK, w.Code)
+		assert.Equal(t, consts.CodeParamError, decodeUserHandlerCode(t, w))
 	})
 }
 

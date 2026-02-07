@@ -207,11 +207,11 @@ func TestRouterUserAuthRoutesSuccess(t *testing.T) {
 	initRouterUserTestLogger()
 
 	tests := []struct {
-		name    string
-		method  string
-		target  string
-		body    string
-		setup   func(*fakeRouterUserService, *bool)
+		name   string
+		method string
+		target string
+		body   string
+		setup  func(*fakeRouterUserService, *bool)
 	}{
 		{
 			name:   "get_profile",
@@ -239,11 +239,27 @@ func TestRouterUserAuthRoutesSuccess(t *testing.T) {
 		{
 			name:   "search_user",
 			method: http.MethodGet,
-			target: "/api/v1/auth/user/search?Keyword=alice&Page=1&PageSize=20",
+			target: "/api/v1/auth/user/search?keyword=alice&page=1&pageSize=20",
 			setup: func(s *fakeRouterUserService, called *bool) {
 				s.searchUserFn = func(_ context.Context, req *dto.SearchUserRequest) (*dto.SearchUserResponse, error) {
 					*called = true
 					require.Equal(t, "alice", req.Keyword)
+					require.Equal(t, int32(1), req.Page)
+					require.Equal(t, int32(20), req.PageSize)
+					return &dto.SearchUserResponse{}, nil
+				}
+			},
+		},
+		{
+			name:   "search_user_with_default_pagination",
+			method: http.MethodGet,
+			target: "/api/v1/auth/user/search?keyword=alice",
+			setup: func(s *fakeRouterUserService, called *bool) {
+				s.searchUserFn = func(_ context.Context, req *dto.SearchUserRequest) (*dto.SearchUserResponse, error) {
+					*called = true
+					require.Equal(t, "alice", req.Keyword)
+					require.Equal(t, int32(1), req.Page)
+					require.Equal(t, int32(100), req.PageSize)
 					return &dto.SearchUserResponse{}, nil
 				}
 			},
@@ -357,7 +373,22 @@ func TestRouterUserParamErrors(t *testing.T) {
 		{
 			name:   "search_query_invalid",
 			method: http.MethodGet,
-			target: "/api/v1/auth/user/search?Keyword=",
+			target: "/api/v1/auth/user/search?keyword=",
+		},
+		{
+			name:   "search_query_page_invalid_zero",
+			method: http.MethodGet,
+			target: "/api/v1/auth/user/search?keyword=alice&page=0",
+		},
+		{
+			name:   "search_query_page_size_invalid_zero",
+			method: http.MethodGet,
+			target: "/api/v1/auth/user/search?keyword=alice&pageSize=0",
+		},
+		{
+			name:   "search_query_page_size_invalid_too_large",
+			method: http.MethodGet,
+			target: "/api/v1/auth/user/search?keyword=alice&pageSize=101",
 		},
 		{
 			name:   "update_profile_no_fields",
@@ -424,4 +455,3 @@ func TestRouterUserErrorMapping(t *testing.T) {
 		assert.Equal(t, consts.CodeInternalError, decodeRouterUserCode(t, w))
 	})
 }
-

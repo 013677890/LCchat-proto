@@ -19,7 +19,7 @@ func CorsMiddleware() gin.HandlerFunc {
 
 		//测试环境 全部允许（带凭据）
 		c.Header("Access-Control-Allow-Origin", origin) // 返回请求的具体 Origin，不能是 *
-		c.Header("Access-Control-Allow-Headers", "Authorization, Content-Type, x-requested-with")
+		c.Header("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Device-ID, X-Requested-With")
 		c.Header("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE")
 		c.Header("Access-Control-Allow-Credentials", "true")
 		c.Header("Vary", "Origin") // 重要：告诉浏览器 Origin 值会变化

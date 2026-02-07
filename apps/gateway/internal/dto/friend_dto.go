@@ -8,9 +8,9 @@ import (
 
 // SearchUserRequest 搜索用户请求 DTO
 type SearchUserRequest struct {
-	Keyword  string `json:"keyword" binding:"required,min=1,max=20"` // 搜索关键字
-	Page     int32  `json:"page" binding:"min=1"`                    // 页码
-	PageSize int32  `json:"pageSize" binding:"min=1,max=100"`        // 每页大小
+	Keyword  string `form:"keyword" json:"keyword" binding:"required,min=1,max=20"`     // 搜索关键字
+	Page     int32  `form:"page" json:"page" binding:"omitempty,min=1"`                 // 页码
+	PageSize int32  `form:"pageSize" json:"pageSize" binding:"omitempty,min=1,max=100"` // 每页大小
 }
 
 // SearchUserResponse 搜索用户响应 DTO

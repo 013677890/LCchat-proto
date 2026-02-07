@@ -131,7 +131,18 @@ func (h *UserHandler) SearchUser(c *gin.Context) {
 		return
 	}
 
-	// 2. 设置默认值
+	// 2. 显式分页参数校验：
+	// 未传分页时走默认值；显式传非法值时返回参数错误。
+	if _, exists := c.GetQuery("page"); exists && req.Page < 1 {
+		result.Fail(c, nil, consts.CodeParamError)
+		return
+	}
+	if _, exists := c.GetQuery("pageSize"); exists && (req.PageSize < 1 || req.PageSize > 100) {
+		result.Fail(c, nil, consts.CodeParamError)
+		return
+	}
+
+	// 3. 设置默认值
 	if req.Page == 0 {
 		req.Page = 1
 	}
@@ -139,7 +150,7 @@ func (h *UserHandler) SearchUser(c *gin.Context) {
 		req.PageSize = 100
 	}
 
-	// 3. 调用服务层处理业务逻辑（依赖注入）
+	// 4. 调用服务层处理业务逻辑（依赖注入）
 	searchResp, err := h.userService.SearchUser(ctx, &req)
 	if err != nil {
 		// 检查是否为业务错误
@@ -157,7 +168,7 @@ func (h *UserHandler) SearchUser(c *gin.Context) {
 		return
 	}
 
-	// 4. 返回成功响应
+	// 5. 返回成功响应
 	result.Success(c, searchResp)
 }
 
