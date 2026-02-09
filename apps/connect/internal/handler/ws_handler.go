@@ -10,7 +10,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"golang.org/x/net/websocket"
+	"github.com/gorilla/websocket"
 )
 
 const (
@@ -18,6 +18,16 @@ const (
 	wsMessageInvalidFormatCode = 10001
 	wsMessageUnsupportedCode   = 10002
 )
+
+var wsUpgrader = websocket.Upgrader{
+	ReadBufferSize:  4096,
+	WriteBufferSize: 4096,
+	// 当前阶段默认放开来源校验，方便本地多端调试（Web/Electron/移动端模拟器）。
+	// 生产环境建议按域名白名单收紧校验策略。
+	CheckOrigin: func(_ *http.Request) bool {
+		return true
+	},
+}
 
 // WSHandler 负责处理 /ws 接入请求。
 // 职责边界：
@@ -62,9 +72,15 @@ func (h *WSHandler) ServeWS(c *gin.Context) {
 	connCtx = ctxmeta.WithDeviceID(connCtx, session.DeviceID)
 	connCtx = ctxmeta.WithClientIP(connCtx, session.ClientIP)
 
-	websocket.Handler(func(conn *websocket.Conn) {
-		h.handleConnection(connCtx, conn, session)
-	}).ServeHTTP(c.Writer, c.Request)
+	conn, err := wsUpgrader.Upgrade(c.Writer, c.Request, nil)
+	if err != nil {
+		logger.Warn(connCtx, "WebSocket 升级失败",
+			logger.ErrorField("error", err),
+		)
+		return
+	}
+
+	h.handleConnection(connCtx, conn, session)
 }
 
 // handleConnection 承载单个连接的完整生命周期。

@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/net/websocket"
+	"github.com/gorilla/websocket"
 )
 
 const (
@@ -125,8 +125,8 @@ func (c *Client) readLoop(ctx context.Context, onMessage MessageHandler) {
 		default:
 		}
 
-		var raw []byte
-		if err := websocket.Message.Receive(c.conn, &raw); err != nil {
+		_, raw, err := c.conn.ReadMessage()
+		if err != nil {
 			return
 		}
 
@@ -147,7 +147,7 @@ func (c *Client) writeLoop(ctx context.Context) {
 			return
 		case msg := <-c.send:
 			_ = c.conn.SetWriteDeadline(time.Now().Add(wsWriteTimeout))
-			if err := websocket.Message.Send(c.conn, msg); err != nil {
+			if err := c.conn.WriteMessage(websocket.TextMessage, msg); err != nil {
 				c.Close()
 				return
 			}
