@@ -1,0 +1,177 @@
+package handler
+
+import (
+	"ChatServer/apps/connect/internal/manager"
+	"ChatServer/apps/connect/internal/svc"
+	"ChatServer/pkg/ctxmeta"
+	"ChatServer/pkg/logger"
+	"context"
+	"errors"
+	"net/http"
+
+	"github.com/gin-gonic/gin"
+	"golang.org/x/net/websocket"
+)
+
+const (
+	// WebSocket 协议层业务错误码（仅用于 ws 帧内的 error 消息，不是 HTTP 状态码）。
+	wsMessageInvalidFormatCode = 10001
+	wsMessageUnsupportedCode   = 10002
+)
+
+// WSHandler 负责处理 /ws 接入请求。
+// 职责边界：
+// - 处理 Gin/HTTP 层参数、升级与错误响应；
+// - 调用 svc 完成鉴权与消息解析；
+// - 调用 manager 维护连接生命周期。
+type WSHandler struct {
+	connManager *manager.ConnectionManager
+	connectSvc  *svc.ConnectService
+}
+
+// NewWSHandler 创建 WebSocket 入口处理器。
+func NewWSHandler(connManager *manager.ConnectionManager, connectSvc *svc.ConnectService) *WSHandler {
+	return &WSHandler{
+		connManager: connManager,
+		connectSvc:  connectSvc,
+	}
+}
+
+// ServeWS 处理 WebSocket 握手与接入。
+// 执行流程：
+// 1. 从 query 中读取 token/device_id，并获取 client_ip。
+// 2. 调用 connectSvc.Authenticate 做鉴权。
+// 3. 构建连接级 context（注入 trace/user/device/ip）。
+// 4. 完成协议升级并进入连接处理主循环。
+func (h *WSHandler) ServeWS(c *gin.Context) {
+	token := c.Query("token")
+	deviceID := c.Query("device_id")
+	clientIP := c.ClientIP()
+
+	session, err := h.connectSvc.Authenticate(c.Request.Context(), token, deviceID, clientIP)
+	if err != nil {
+		h.writeAuthError(c, err)
+		return
+	}
+
+	connCtx := context.Background()
+	if traceID := ctxmeta.TraceIDFromGin(c); traceID != "" {
+		connCtx = ctxmeta.WithTraceID(connCtx, traceID)
+	}
+	connCtx = ctxmeta.WithUserUUID(connCtx, session.UserUUID)
+	connCtx = ctxmeta.WithDeviceID(connCtx, session.DeviceID)
+	connCtx = ctxmeta.WithClientIP(connCtx, session.ClientIP)
+
+	websocket.Handler(func(conn *websocket.Conn) {
+		h.handleConnection(connCtx, conn, session)
+	}).ServeHTTP(c.Writer, c.Request)
+}
+
+// handleConnection 承载单个连接的完整生命周期。
+// 关键语义：
+// - 同设备重复连接时，用新连接替换旧连接；
+// - 连接建立/断开分别触发 OnConnect/OnDisconnect；
+// - 日志里保留 user_uuid/device_id 便于排障。
+func (h *WSHandler) handleConnection(ctx context.Context, conn *websocket.Conn, session *svc.Session) {
+	client := manager.NewClient(conn, session.UserUUID, session.DeviceID)
+	replaced := h.connManager.Register(client)
+	if replaced != nil {
+		replaced.Close()
+	}
+
+	h.connectSvc.OnConnect(ctx, session)
+	logger.Info(ctx, "WebSocket 连接已建立",
+		logger.String("user_uuid", session.UserUUID),
+		logger.String("device_id", session.DeviceID),
+		logger.String("client_ip", session.ClientIP),
+		logger.Int("online_count", h.connManager.Count()),
+	)
+
+	client.Run(ctx, func(raw []byte) {
+		h.handleMessage(ctx, client, session, raw)
+	}, func() {
+		h.connManager.Unregister(client)
+		h.connectSvc.OnDisconnect(ctx, session)
+		logger.Info(ctx, "WebSocket 连接已断开",
+			logger.String("user_uuid", session.UserUUID),
+			logger.String("device_id", session.DeviceID),
+			logger.Int("online_count", h.connManager.Count()),
+		)
+	})
+}
+
+// handleMessage 处理客户端上行帧。
+// 当前支持：
+// - heartbeat: 更新活跃时间并返回 heartbeat_ack；
+// - message: 预留消息链路（当前仅回 message_ack 占位）。
+func (h *WSHandler) handleMessage(ctx context.Context, client *manager.Client, session *svc.Session, raw []byte) {
+	envelope, err := h.connectSvc.ParseEnvelope(raw)
+	if err != nil {
+		h.sendErrorFrame(ctx, client, wsMessageInvalidFormatCode, "invalid frame format")
+		return
+	}
+
+	switch envelope.Type {
+	case "heartbeat":
+		h.connectSvc.OnHeartbeat(ctx, session)
+		ack, marshalErr := h.connectSvc.MarshalEnvelope("heartbeat_ack", nil)
+		if marshalErr != nil {
+			logger.Warn(ctx, "心跳应答序列化失败",
+				logger.ErrorField("error", marshalErr),
+			)
+			return
+		}
+		if !client.Enqueue(ack) {
+			client.Close()
+		}
+	case "message":
+		// TODO: 接入 msg 服务进行消息路由与持久化，并返回投递结果回执。
+		ack, marshalErr := h.connectSvc.MarshalEnvelope("message_ack", nil)
+		if marshalErr == nil && !client.Enqueue(ack) {
+			client.Close()
+		}
+	default:
+		h.sendErrorFrame(ctx, client, wsMessageUnsupportedCode, "unsupported message type")
+	}
+}
+
+// sendErrorFrame 发送 ws 协议层错误帧。
+// 发送失败通常表示连接不可写，此时主动关闭连接避免资源泄漏。
+func (h *WSHandler) sendErrorFrame(ctx context.Context, client *manager.Client, code int, message string) {
+	payload, err := h.connectSvc.MarshalEnvelope("error", svc.ErrorData{
+		Code:    code,
+		Message: message,
+	})
+	if err != nil {
+		logger.Warn(ctx, "错误帧序列化失败",
+			logger.Int("code", code),
+			logger.ErrorField("error", err),
+		)
+		return
+	}
+	if !client.Enqueue(payload) {
+		client.Close()
+	}
+}
+
+// writeAuthError 将鉴权错误映射为 HTTP 握手阶段错误响应。
+// 说明：握手前还未升级为 WebSocket，因此用 HTTP JSON 返回更直观。
+func (h *WSHandler) writeAuthError(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, svc.ErrTokenRequired), errors.Is(err, svc.ErrDeviceIDRequired):
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    http.StatusBadRequest,
+			"message": err.Error(),
+		})
+	case errors.Is(err, svc.ErrTokenInvalid):
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"code":    http.StatusUnauthorized,
+			"message": "token invalid or expired",
+		})
+	default:
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    http.StatusInternalServerError,
+			"message": "internal error",
+		})
+	}
+}
