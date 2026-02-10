@@ -5,7 +5,7 @@ package user;
 option go_package = "ChatServer/apps/user/pb";
 
 // 导入通用数据模型
-import "apps/user/pb/common.proto";
+import "pb/user/common.proto";
 
 import "validate/validate.proto";
 
